@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"os/user"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -35,6 +37,8 @@ type consumeCmd struct {
 	consumer      sarama.Consumer
 	offsetManager sarama.OffsetManager
 	poms          map[int32]sarama.PartitionOffsetManager
+	shutdown      chan struct{}
+	wg            sync.WaitGroup
 }
 
 var offsetResume int64 = -3
@@ -414,6 +418,18 @@ func (cmd *consumeCmd) setupClient() {
 func (cmd *consumeCmd) run(args []string) {
 	var err error
 
+	// Initialize shutdown channel
+	cmd.shutdown = make(chan struct{})
+
+	// Set up signal handling
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-signals
+		warnf("received signal %s - triggering shutdown\n", sig)
+		close(cmd.shutdown)
+	}()
+
 	cmd.parseArgs(args)
 
 	if cmd.verbose {
@@ -435,6 +451,9 @@ func (cmd *consumeCmd) run(args []string) {
 	defer cmd.closePOMs()
 
 	cmd.consume(partitions)
+
+	// Wait for all goroutines to finish
+	cmd.wg.Wait()
 }
 
 func (cmd *consumeCmd) setupOffsetManager() {
@@ -450,17 +469,18 @@ func (cmd *consumeCmd) setupOffsetManager() {
 
 func (cmd *consumeCmd) consume(partitions []int32) {
 	var (
-		wg  sync.WaitGroup
 		out = make(chan printContext)
 	)
 
 	go print(out, cmd.pretty)
 
-	wg.Add(len(partitions))
+	cmd.wg.Add(len(partitions))
 	for _, p := range partitions {
-		go func(p int32) { defer wg.Done(); cmd.consumePartition(out, p) }(p)
+		go func(p int32) {
+			defer cmd.wg.Done()
+			cmd.consumePartition(out, p)
+		}(p)
 	}
-	wg.Wait()
 }
 
 func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) {
@@ -589,6 +609,14 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 		}
 
 		select {
+		case <-cmd.shutdown:
+			warnf("partition %v consumer shutting down gracefully\n", p)
+			if cmd.group != "" && pom != nil {
+				if err := pom.Close(); err != nil {
+					warnf("failed to close partition offset manager for partition %v err=%v", p, err)
+				}
+			}
+			return
 		case <-timeout:
 			warnf("consuming from partition %v timed out after %s\n", p, cmd.timeout)
 			return
