@@ -28,6 +28,7 @@ type consumeCmd struct {
 	auth        authConfig
 	offsets     map[int32]interval
 	timeout     time.Duration
+	until       *time.Time
 	version     sarama.KafkaVersion
 	encodeValue string
 	encodeKey   string
@@ -40,6 +41,7 @@ type consumeCmd struct {
 	offsetManager sarama.OffsetManager
 	poms          map[int32]sarama.PartitionOffsetManager
 	shutdown      chan struct{}
+	untilReached  chan struct{} // Signal when until time is reached
 	wg            sync.WaitGroup
 }
 
@@ -81,6 +83,17 @@ func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 		case msg := <-claim.Messages():
 			if msg == nil {
 				h.cmd.infof("received nil message for partition %v, ending claim\n", claim.Partition())
+				return nil
+			}
+
+			// Check if message timestamp exceeds until time
+			if h.cmd.until != nil && !msg.Timestamp.IsZero() && msg.Timestamp.After(*h.cmd.until) {
+				h.cmd.infof("consumer group handler reached until time %v (message timestamp: %v) for partition %v\n", h.cmd.until.Format(time.RFC3339), msg.Timestamp.Format(time.RFC3339), claim.Partition())
+				// Signal that until time was reached
+				select {
+				case h.cmd.untilReached <- struct{}{}:
+				default:
+				}
 				return nil
 			}
 
@@ -151,6 +164,7 @@ type consumeArgs struct {
 	brokers     string
 	auth        string
 	timeout     time.Duration
+	until       string
 	offsets     string
 	verbose     bool
 	version     string
@@ -188,6 +202,14 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
 	if err != nil {
 		failf("failed to read kafka version err=%v", err)
+	}
+
+	if args.until != "" {
+		cmd.until, err = parseUntilTime(args.until)
+		if err != nil {
+			cmd.failStartup(fmt.Sprintf("failed to parse until time: %v", err))
+			return
+		}
 	}
 
 	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
@@ -338,6 +360,47 @@ func parseNamedRelativeOffset(s string) (offset, bool) {
 	}
 }
 
+// parseUntilTime parses a time string that can be either:
+// - Current time: "now"
+// - Absolute time: RFC3339 format (2006-01-02T15:04:05Z07:00)
+// - Relative duration: +5m, +1h, +30s (future from current time)
+// - Negative relative duration: -5m, -1h, -30s (past from current time)
+func parseUntilTime(s string) (*time.Time, error) {
+	if s == "now" {
+		// Current time
+		t := time.Now()
+		return &t, nil
+	}
+	
+	if strings.HasPrefix(s, "+") {
+		// Relative time in the future
+		duration, err := time.ParseDuration(s[1:])
+		if err != nil {
+			return nil, fmt.Errorf("invalid relative duration %q: %v", s, err)
+		}
+		t := time.Now().Add(duration)
+		return &t, nil
+	}
+	
+	if strings.HasPrefix(s, "-") {
+		// Relative time in the past
+		duration, err := time.ParseDuration(s[1:])
+		if err != nil {
+			return nil, fmt.Errorf("invalid relative duration %q: %v", s, err)
+		}
+		t := time.Now().Add(-duration) // Subtract duration for past time
+		return &t, nil
+	}
+	
+	// Parse as RFC3339 absolute time
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid time format %q (expected RFC3339): %v", s, err)
+	}
+	
+	return &t, nil
+}
+
 func parseInterval(s string) (interval, error) {
 	if s == "" {
 		// An empty string implies all messages.
@@ -436,6 +499,7 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.StringVar(&args.encodeValue, "encodevalue", "string", "Present message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.group, "group", "", "Consumer group to use for marking offsets. kt will mark offsets if this arg is supplied.")
+	flags.StringVar(&args.until, "until", "", "Stop consuming when message timestamp reaches this time. Supports 'now', RFC3339 absolute time (2006-01-02T15:04:05Z07:00), or relative duration from now (+5m, +1h, -30m).")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -501,8 +565,9 @@ func (cmd *consumeCmd) setupClient() {
 func (cmd *consumeCmd) run(args []string) {
 	var err error
 
-	// Initialize shutdown channel
+	// Initialize channels
 	cmd.shutdown = make(chan struct{})
+	cmd.untilReached = make(chan struct{}, 1) // Buffered to avoid blocking
 
 	// Set up signal handling
 	signals := make(chan os.Signal, 1)
@@ -606,12 +671,17 @@ func (cmd *consumeCmd) consumeWithGroup() {
 		}
 	}()
 
-	// Handle shutdown signal
+	// Handle shutdown and until-reached signals
 	go func() {
 		debugf(cmd, "shutdown handler goroutine started\n")
-		<-cmd.shutdown
-		debugf(cmd, "shutdown signal received, cancelling context\n")
-		cancel()
+		select {
+		case <-cmd.shutdown:
+			debugf(cmd, "shutdown signal received, cancelling context\n")
+			cancel()
+		case <-cmd.untilReached:
+			debugf(cmd, "until time reached, cancelling context\n")
+			cancel()
+		}
 	}()
 }
 
@@ -788,6 +858,17 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 				return
 			}
 
+			// Check if message timestamp exceeds until time
+			if cmd.until != nil && !msg.Timestamp.IsZero() && msg.Timestamp.After(*cmd.until) {
+				warnf("partition %v consumer reached until time %v (message timestamp: %v)\n", p, cmd.until.Format(time.RFC3339), msg.Timestamp.Format(time.RFC3339))
+				// Signal that until time was reached
+				select {
+				case cmd.untilReached <- struct{}{}:
+				default:
+				}
+				return
+			}
+
 			m := newConsumedMessage(msg, cmd.encodeKey, cmd.encodeValue)
 			ctx := printContext{output: m, done: make(chan struct{})}
 			out <- ctx
@@ -915,5 +996,35 @@ and
   +10:
 
 Will achieve the same as the two examples above.
+
+The -until flag allows you to stop consuming when message timestamps reach a specified time:
+
+Current time:
+  -until now
+
+Absolute time (RFC3339 format):
+  -until 2006-01-02T15:04:05Z07:00
+
+Relative time from now:
+  -until +5m     # 5 minutes from now
+  -until +1h30m  # 1 hour 30 minutes from now
+  -until +24h    # 24 hours from now
+
+Relative time in the past:
+  -until -1h     # 1 hour ago
+  -until -30m    # 30 minutes ago
+  -until -24h    # 24 hours ago
+
+Common use cases with -group and resume offsets:
+  # Resume from last committed offset, stop at current time
+  -group mygroup -offsets resume -until now
+  
+  # Resume from last committed offset, stop at 1 hour ago
+  -group mygroup -offsets resume -until -1h
+  
+  # Process messages from yesterday only
+  -group mygroup -offsets resume -until -24h
+
+If the topic only contains messages older than the until time, consumption will stop when reaching the end of available messages.
 
 `, ENV_TOPIC, ENV_BROKERS)
