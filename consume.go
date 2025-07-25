@@ -360,45 +360,9 @@ func parseNamedRelativeOffset(s string) (offset, bool) {
 	}
 }
 
-// parseUntilTime parses a time string that can be either:
-// - Current time: "now"
-// - Absolute time: RFC3339 format (2006-01-02T15:04:05Z07:00)
-// - Relative duration: +5m, +1h, +30s (future from current time)
-// - Negative relative duration: -5m, -1h, -30s (past from current time)
+// parseUntilTime parses a time string for the until flag
 func parseUntilTime(s string) (*time.Time, error) {
-	if s == "now" {
-		// Current time
-		t := time.Now()
-		return &t, nil
-	}
-	
-	if strings.HasPrefix(s, "+") {
-		// Relative time in the future
-		duration, err := time.ParseDuration(s[1:])
-		if err != nil {
-			return nil, fmt.Errorf("invalid relative duration %q: %v", s, err)
-		}
-		t := time.Now().Add(duration)
-		return &t, nil
-	}
-	
-	if strings.HasPrefix(s, "-") {
-		// Relative time in the past
-		duration, err := time.ParseDuration(s[1:])
-		if err != nil {
-			return nil, fmt.Errorf("invalid relative duration %q: %v", s, err)
-		}
-		t := time.Now().Add(-duration) // Subtract duration for past time
-		return &t, nil
-	}
-	
-	// Parse as RFC3339 absolute time
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		return nil, fmt.Errorf("invalid time format %q (expected RFC3339): %v", s, err)
-	}
-	
-	return &t, nil
+	return parseTimeString(s)
 }
 
 func parseInterval(s string) (interval, error) {
