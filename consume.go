@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"flag"
@@ -35,6 +36,7 @@ type consumeCmd struct {
 
 	client        sarama.Client
 	consumer      sarama.Consumer
+	consumerGroup sarama.ConsumerGroup
 	offsetManager sarama.OffsetManager
 	poms          map[int32]sarama.PartitionOffsetManager
 	shutdown      chan struct{}
@@ -42,6 +44,64 @@ type consumeCmd struct {
 }
 
 var offsetResume int64 = -3
+
+func debugf(cmd *consumeCmd, format string, args ...interface{}) {
+	if cmd.verbose {
+		warnf("DEBUG: "+format, args...)
+	}
+}
+
+// ConsumerGroupHandler implements sarama.ConsumerGroupHandler
+type ConsumerGroupHandler struct {
+	cmd *consumeCmd
+	out chan printContext
+}
+
+func (h *ConsumerGroupHandler) Setup(session sarama.ConsumerGroupSession) error {
+	debugf(h.cmd, "ConsumerGroupHandler Setup called, member ID: %s\n", session.MemberID())
+	return nil
+}
+
+func (h *ConsumerGroupHandler) Cleanup(session sarama.ConsumerGroupSession) error {
+	debugf(h.cmd, "ConsumerGroupHandler Cleanup called, member ID: %s\n", session.MemberID())
+	return nil
+}
+
+func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	debugf(h.cmd, "ConsumeClaim starting for partition %v, member ID: %s\n", claim.Partition(), session.MemberID())
+
+	for {
+		select {
+		case <-h.cmd.shutdown:
+			h.cmd.infof("consumer group handler shutting down gracefully for partition %v\n", claim.Partition())
+			return nil
+		case <-session.Context().Done():
+			debugf(h.cmd, "session context cancelled for partition %v, error: %v\n", claim.Partition(), session.Context().Err())
+			return nil
+		case msg := <-claim.Messages():
+			if msg == nil {
+				h.cmd.infof("received nil message for partition %v, ending claim\n", claim.Partition())
+				return nil
+			}
+
+			m := newConsumedMessage(msg, h.cmd.encodeKey, h.cmd.encodeValue)
+			ctx := printContext{output: m, done: make(chan struct{})}
+
+			select {
+			case h.out <- ctx:
+				<-ctx.done
+				// Mark message as processed
+				session.MarkMessage(msg, "")
+			case <-h.cmd.shutdown:
+				h.cmd.infof("shutdown during message processing for partition %v\n", claim.Partition())
+				return nil
+			case <-session.Context().Done():
+				h.cmd.infof("session cancelled during message processing for partition %v\n", claim.Partition())
+				return nil
+			}
+		}
+	}
+}
 
 type offset struct {
 	relative bool
@@ -404,6 +464,29 @@ func (cmd *consumeCmd) setupClient() {
 		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-consume-" + sanitizeUsername(usr.Username)
+
+	// Configure consumer group settings
+	cfg.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRoundRobin()
+	cfg.Consumer.Group.Session.Timeout = 10 * time.Second
+	cfg.Consumer.Group.Heartbeat.Interval = 3 * time.Second
+
+	// Set initial offset based on offsets parameter for consumer groups
+	if cmd.group != "" {
+		// Check if offsets contain "newest"
+		offsetsStr := ""
+		for _, interval := range cmd.offsets {
+			if interval.start.relative && interval.start.start == sarama.OffsetNewest {
+				offsetsStr = "newest"
+				break
+			}
+		}
+		if offsetsStr == "newest" {
+			cfg.Consumer.Offsets.Initial = sarama.OffsetNewest
+		} else {
+			cfg.Consumer.Offsets.Initial = sarama.OffsetOldest
+		}
+	}
+
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.auth, cfg); err != nil {
@@ -437,23 +520,100 @@ func (cmd *consumeCmd) run(args []string) {
 	}
 
 	cmd.setupClient()
-	cmd.setupOffsetManager()
 
-	if cmd.consumer, err = sarama.NewConsumerFromClient(cmd.client); err != nil {
-		failf("failed to create consumer err=%v", err)
+	// Use consumer group if group is specified
+	if cmd.group != "" {
+		if cmd.consumerGroup, err = sarama.NewConsumerGroupFromClient(cmd.group, cmd.client); err != nil {
+			failf("failed to create consumer group err=%v", err)
+		}
+		defer logClose("consumer group", cmd.consumerGroup)
+
+		cmd.consumeWithGroup()
+	} else {
+		// Fallback to old behavior for non-group consumers
+		cmd.setupOffsetManager()
+
+		if cmd.consumer, err = sarama.NewConsumerFromClient(cmd.client); err != nil {
+			failf("failed to create consumer err=%v", err)
+		}
+		defer logClose("consumer", cmd.consumer)
+
+		partitions := cmd.findPartitions()
+		if len(partitions) == 0 {
+			failf("Found no partitions to consume")
+		}
+		defer cmd.closePOMs()
+
+		cmd.consume(partitions)
 	}
-	defer logClose("consumer", cmd.consumer)
-
-	partitions := cmd.findPartitions()
-	if len(partitions) == 0 {
-		failf("Found no partitions to consume")
-	}
-	defer cmd.closePOMs()
-
-	cmd.consume(partitions)
 
 	// Wait for all goroutines to finish
 	cmd.wg.Wait()
+}
+
+func (cmd *consumeCmd) consumeWithGroup() {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	debugf(cmd, "created context for consumer group\n")
+
+	out := make(chan printContext)
+	go print(out, cmd.pretty)
+
+	handler := &ConsumerGroupHandler{
+		cmd: cmd,
+		out: out,
+	}
+
+	cmd.wg.Add(1)
+	go func() {
+		defer cmd.wg.Done()
+		defer cancel() // Move cancel here so it's only called when goroutine exits
+		topics := []string{cmd.topic}
+
+		debugf(cmd, "starting consumer group goroutine\n")
+
+
+		for {
+			debugf(cmd, "about to call consumerGroup.Consume, context state: %v\n", ctx.Err())
+
+			// This blocks until an error occurs or context is cancelled
+			if err := cmd.consumerGroup.Consume(ctx, topics, handler); err != nil {
+				debugf(cmd, "consumerGroup.Consume returned error: %v, context state: %v\n", err, ctx.Err())
+
+				if err == sarama.ErrClosedConsumerGroup {
+					warnf("consumer group closed\n")
+					return
+				}
+				if ctx.Err() != nil {
+					warnf("context was cancelled during consume: %v, shutting down consumer group\n", ctx.Err())
+					return
+				}
+				warnf("consumer group error: %v\n", err)
+				// Don't return immediately on error, retry with backoff
+				time.Sleep(time.Second)
+				continue
+			}
+
+			debugf(cmd, "consumerGroup.Consume returned without error, context state: %v\n", ctx.Err())
+
+			// If Consume returns without error, check if context was cancelled
+			if ctx.Err() != nil {
+				warnf("context cancelled after successful consume: %v, consumer group shutting down\n", ctx.Err())
+				return
+			}
+
+			// If we reach here and context is still valid, it means rebalancing occurred
+			warnf("consumer group rebalancing occurred, continuing...\n")
+		}
+	}()
+
+	// Handle shutdown signal
+	go func() {
+		debugf(cmd, "shutdown handler goroutine started\n")
+		<-cmd.shutdown
+		debugf(cmd, "shutdown signal received, cancelling context\n")
+		cancel()
+	}()
 }
 
 func (cmd *consumeCmd) setupOffsetManager() {
@@ -560,7 +720,7 @@ func (cmd *consumeCmd) closePOMs() {
 	cmd.Lock()
 	for p, pom := range cmd.poms {
 		if err := pom.Close(); err != nil {
-			warnf("failed to close partition offset manager for partition %v err=%v", p, err)
+			warnf("failed to close partition offset manager for partition %v err=%v\n", p, err)
 		}
 	}
 	cmd.Unlock()
@@ -613,7 +773,7 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			warnf("partition %v consumer shutting down gracefully\n", p)
 			if cmd.group != "" && pom != nil {
 				if err := pom.Close(); err != nil {
-					warnf("failed to close partition offset manager for partition %v err=%v", p, err)
+					warnf("failed to close partition offset manager for partition %v err=%v\n", p, err)
 				}
 			}
 			return
@@ -621,11 +781,11 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			warnf("consuming from partition %v timed out after %s\n", p, cmd.timeout)
 			return
 		case err := <-pc.Errors():
-			warnf("partition %v consumer encountered err %s", p, err)
+			warnf("partition %v consumer encountered err %s\n", p, err)
 			return
 		case msg, ok := <-pc.Messages():
 			if !ok {
-				warnf("unexpected closed messages chan")
+				warnf("unexpected closed messages chan\n")
 				return
 			}
 
