@@ -572,7 +572,6 @@ func (cmd *consumeCmd) consumeWithGroup() {
 
 		debugf(cmd, "starting consumer group goroutine\n")
 
-
 		for {
 			debugf(cmd, "about to call consumerGroup.Consume, context state: %v\n", ctx.Err())
 
