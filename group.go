@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/IBM/sarama"
-	dps "github.com/markusmobius/go-dateparser"
 )
 
 type groupCmd struct {
@@ -397,18 +397,17 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	default:
 		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
 		if err != nil {
-			var dt, derr = dps.Parse(nil, args.reset)
-			if derr == nil {
-				err = nil
-				cmd.reset = dt.Time.UnixMilli()
+			// Try parsing as time string (now, RFC3339, or relative duration)
+			var dt *time.Time
+			dt, err = parseTimeString(args.reset)
+			if err == nil {
+				cmd.reset = dt.UnixMilli()
 				cmd.resetTime = true
-			} else {
-				err = derr
 			}
 		}
 		if err != nil {
 			warnf("failed to parse set %#v err=%v", args.reset, err)
-			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. See https://github.com/markusmobius/go-dateparser for supported time formats. `, args.reset))
+			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h). `, args.reset))
 		}
 	}
 
@@ -510,7 +509,10 @@ kt group -reset newest -topic fav-topic -group specials -partitions all
 
 To reset a consumer group's offset to the newest that was available at a specific time on all partitions:
 
-kt group -reset "6 hours ago" -topic fav-topic -group specials -partitions all
+kt group -reset -6h -topic fav-topic -group specials -partitions all
 
-See https://github.com/markusmobius/go-dateparser for a list of supported time formats.
+Supported time formats for -reset:
+- "now" - current time
+- RFC3339 absolute time: "2006-01-02T15:04:05Z07:00"
+- Relative duration: "+5m" (future), "-1h" (past)
 `, ENV_TOPIC, ENV_BROKERS)
