@@ -117,14 +117,24 @@ func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 }
 
 type offset struct {
-	relative bool
-	start    int64
-	diff     int64
+	relative  bool
+	start     int64
+	diff      int64
+	timestamp bool // true if start represents a timestamp in milliseconds that needs resolution
 }
 
 func (cmd *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
 	if !o.relative {
 		return o.start, nil
+	}
+
+	// Handle timestamp-based offsets
+	if o.timestamp {
+		res, err := cmd.resolveTimestampOffset(o.start, partition)
+		if err != nil {
+			return 0, err
+		}
+		return res + o.diff, nil
 	}
 
 	var (
@@ -152,6 +162,52 @@ func (cmd *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
 	}
 
 	return o.start + o.diff, nil
+}
+
+// resolveTimestampOffset resolves a timestamp in milliseconds to the closest Kafka offset
+func (cmd *consumeCmd) resolveTimestampOffset(timestampMs int64, partition int32) (int64, error) {
+	// Create an offset request to find the offset for the given timestamp
+	offsetRequest := &sarama.OffsetRequest{
+		Version: 1, // Version 1 supports timestamp-based offset lookup
+	}
+	
+	// Add the partition and timestamp to the request
+	offsetRequest.AddBlock(cmd.topic, partition, timestampMs, 1)
+	
+	// Get a broker to send the request to
+	broker, err := cmd.client.Leader(cmd.topic, partition)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get leader broker for topic %s partition %d: %v", cmd.topic, partition, err)
+	}
+	
+	// Send the offset request
+	offsetResponse, err := broker.GetAvailableOffsets(offsetRequest)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get offset for timestamp %d: %v", timestampMs, err)
+	}
+	
+	// Extract the offset from the response
+	topicOffsets, ok := offsetResponse.Blocks[cmd.topic]
+	if !ok {
+		return 0, fmt.Errorf("no offset response for topic %s", cmd.topic)
+	}
+	
+	partitionOffset, ok := topicOffsets[partition]
+	if !ok {
+		return 0, fmt.Errorf("no offset response for partition %d", partition)
+	}
+	
+	if partitionOffset.Err != sarama.ErrNoError {
+		return 0, fmt.Errorf("error in offset response: %v", partitionOffset.Err)
+	}
+	
+	// If the timestamp is too old, return the oldest available offset
+	if partitionOffset.Offset == -1 {
+		debugf(cmd, "timestamp %d is older than available messages, using oldest offset for partition %d\n", timestampMs, partition)
+		return cmd.client.GetOffset(cmd.topic, partition, sarama.OffsetOldest)
+	}
+	
+	return partitionOffset.Offset, nil
 }
 
 type interval struct {
@@ -309,14 +365,31 @@ func parseOffsets(str string) (map[int32]interval, error) {
 	return result, nil
 }
 
-// parseRelativeOffset parses a relative offset, such as "oldest", "newest-30", or "+20".
+// parseRelativeOffset parses a relative offset, such as "oldest", "newest-30", "+20", or time strings.
 func parseRelativeOffset(s string) (offset, error) {
 	o, ok := parseNamedRelativeOffset(s)
 	if ok {
 		return o, nil
 	}
+	
+	// Check for time string first, before checking for +/- operators
+	// This handles RFC3339 times and relative durations
+	// Only try parsing as time if it looks like RFC3339 (contains T) or has valid duration syntax
+	if strings.Contains(s, "T") && strings.Contains(s, ":") {
+		// RFC3339 timestamp
+		if t, err := parseTimeString(s); err == nil {
+			return offset{relative: true, start: t.UnixMilli(), timestamp: true}, nil
+		}
+	} else if (strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-")) && (strings.Contains(s, "h") || strings.Contains(s, "m") || strings.Contains(s, "s")) {
+		// Relative duration like +1h, -30m, +5s
+		if t, err := parseTimeString(s); err == nil {
+			return offset{relative: true, start: t.UnixMilli(), timestamp: true}, nil
+		}
+	}
+	
 	i := strings.IndexAny(s, "+-")
 	if i == -1 {
+		// If no +/- and not a time string, it's invalid
 		return offset{}, fmt.Errorf("invalid offset %q", s)
 	}
 	switch {
@@ -355,6 +428,9 @@ func parseNamedRelativeOffset(s string) (offset, bool) {
 		return oldestOffset(), true
 	case "resume":
 		return offset{relative: true, start: offsetResume}, true
+	case "now":
+		// "now" means current time, which will be resolved to timestamp-based offset
+		return offset{relative: true, start: time.Now().UnixMilli(), timestamp: true}, true
 	default:
 		return offset{}, false
 	}
@@ -373,6 +449,22 @@ func parseInterval(s string) (interval, error) {
 			end:   lastOffset(),
 		}, nil
 	}
+	
+	// Check if the entire string is an RFC3339 timestamp before splitting on colons
+	if strings.Contains(s, "T") && strings.Contains(s, ":") {
+		if _, err := parseTimeString(s); err == nil {
+			// It's a valid timestamp, treat as start offset only
+			startOff, err := parseIntervalPart(s, oldestOffset())
+			if err != nil {
+				return interval{}, err
+			}
+			return interval{
+				start: startOff,
+				end:   lastOffset(),
+			}, nil
+		}
+	}
+	
 	var start, end string
 	i := strings.Index(s, ":")
 	if i == -1 {
