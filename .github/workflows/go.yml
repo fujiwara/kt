@@ -15,23 +15,23 @@ jobs:
     steps:
 
     - name: Set up Go 1.x
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
       with:
-        go-version: ^1.21
+        go-version: ^1.24
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v2
-
-    - name: Get dependencies
-      run: |
-        go get -v -t -d ./...
-        if [ -f Gopkg.toml ]; then
-            curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-            dep ensure
-        fi
+      uses: actions/checkout@v4
 
     - name: Bring up containers
       run: docker compose -f test-dependencies.yml up -d
+
+    - name: Wait for Kafka to be ready
+      run: |
+        echo "Waiting for Kafka to be ready..."
+        timeout 120 bash -c 'until nc -z localhost 9092; do sleep 2; done'
+        echo "TCP connection established, checking Kafka readiness..."
+        timeout 60 bash -c 'until docker logs kt-kafka-1 2>&1 | grep -q "Kafka Server started"; do sleep 2; done'
+        echo "Kafka is ready!"
 
     - name: Test
       run: make test
