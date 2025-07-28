@@ -1,0 +1,25 @@
+version: 2
+before:
+  hooks:
+    - go mod download
+builds:
+  - env:
+      - CGO_ENABLED=0
+    main: main.go
+    binary: kt
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+checksum:
+  name_template: "checksums.txt"
+snapshot:
+  version_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
