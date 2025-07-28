@@ -647,6 +647,25 @@ func (cmd *consumeCmd) consumeWithGroup() {
 			cancel()
 		}
 	}()
+
+	// Start timeout handler if timeout is specified
+	if cmd.timeout > 0 {
+		go func() {
+			debugf(cmd, "timeout handler started with timeout %s\n", cmd.timeout)
+			timer := time.NewTimer(cmd.timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				debugf(cmd, "timeout reached, cancelling context\n")
+				cancel()
+			case <-ctx.Done():
+				// Context already cancelled, exit
+			}
+		}()
+	}
+
+	// Wait for consumer group to finish
+	cmd.wg.Wait()
 }
 
 func (cmd *consumeCmd) setupOffsetManager() {

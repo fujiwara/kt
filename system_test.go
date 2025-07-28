@@ -124,7 +124,8 @@ func TestSystem(t *testing.T) {
 	status, stdOut, stdErr = newCmd().
 		run("./kt", "consume",
 			"-topic", topicName,
-			"-timeout", "500ms",
+			"-timeout", "5s",
+			"-offsets", "all=oldest",
 			"-group", "hans")
 	fmt.Printf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
@@ -141,6 +142,33 @@ func TestSystem(t *testing.T) {
 	require.Equal(t, req["partition"], lastConsumed["partition"])
 	require.NotEmpty(t, lastConsumed["timestamp"])
 	pt, err := time.Parse(time.RFC3339, lastConsumed["timestamp"].(string))
+	require.NoError(t, err)
+	require.True(t, pt.After(time.Now().Add(-2*time.Minute)))
+
+	fmt.Printf(">> ✓\n")
+	//
+	// kt consume (non-group, direct partition consumption)
+	//
+
+	status, stdOut, stdErr = newCmd().
+		run("./kt", "consume",
+			"-topic", topicName,
+			"-timeout", "2s",
+			"-offsets", "all=oldest")
+	fmt.Printf(">> system test kt consume -topic %v (non-group) stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt consume -topic %v (non-group) stderr:\n%s\n", topicName, stdErr)
+	require.Zero(t, status)
+
+	lines = strings.Split(stdOut, "\n")
+	require.True(t, len(lines) > 1)
+
+	err = json.Unmarshal([]byte(lines[len(lines)-2]), &lastConsumed)
+	require.NoError(t, err)
+	require.Equal(t, req["value"], lastConsumed["value"])
+	require.Equal(t, req["key"], lastConsumed["key"])
+	require.Equal(t, req["partition"], lastConsumed["partition"])
+	require.NotEmpty(t, lastConsumed["timestamp"])
+	pt, err = time.Parse(time.RFC3339, lastConsumed["timestamp"].(string))
 	require.NoError(t, err)
 	require.True(t, pt.After(time.Now().Add(-2*time.Minute)))
 
@@ -194,7 +222,7 @@ func TestSystem(t *testing.T) {
 		run("./kt", "consume",
 			"-topic", topicName,
 			"-offsets", "all=resume",
-			"-timeout", "500ms",
+			"-timeout", "5s",
 			"-group", "hans")
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stderr:\n%s\n", topicName, stdErr)
