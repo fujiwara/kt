@@ -3,6 +3,7 @@
 Some reasons why you might be interested:
 
 * Consume messages on specific partitions between specific offsets.
+* **Time-based offset consumption**: Start consuming from specific timestamps (RFC3339), relative times (e.g., `-1h`, `+30m`), or current time (`now`).
 * Display topic information (e.g., with partition offset and leader info).
 * Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition).
 * JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
@@ -128,6 +129,34 @@ $ kt consume -topic actor-news -offsets all=newest-1:
 }
 ^Creceived interrupt - shutting down
 shutting down partition consumer for partition 0
+```
+</details>
+
+<details><summary>Consume messages from specific timestamp</summary>
+
+```sh
+# Start from current time (equivalent to newest)
+$ kt consume -topic actor-news -offsets now
+
+# Start from specific absolute time (RFC3339 format)
+$ kt consume -topic actor-news -offsets "2023-12-01T15:00:00Z"
+
+# Start from 1 hour ago
+$ kt consume -topic actor-news -offsets "-1h"
+
+# Start from 30 minutes in the future
+$ kt consume -topic actor-news -offsets "+30m"
+```
+</details>
+
+<details><summary>Mix partition-specific and timestamp-based offsets</summary>
+
+```sh
+# Partition 0 from oldest, others from 1 hour ago
+$ kt consume -topic actor-news -offsets "0=oldest,-1h"
+
+# Specific partitions with absolute timestamp
+$ kt consume -topic actor-news -offsets "1=2023-12-01T15:00:00Z,2=now"
 ```
 </details>
 
