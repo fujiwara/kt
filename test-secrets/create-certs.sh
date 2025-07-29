@@ -1,43 +1,77 @@
 #!/bin/bash
-# original at https://github.com/confluentinc/cp-docker-images/blob/5.3.1-post/examples/kafka-cluster-ssl/secrets/create-certs.sh
-set -o nounset \
-    -o errexit \
-    -o verbose \
-    -o xtrace
+set -e
 
-rm -f kt-test.*
-rm -f kafka.*.jks
-rm -f snakeoil-ca-*
+# Configuration - Use same password for simplicity
+STORE_PASS="kafkapass"
+KEY_PASS="kafkapass"
 
-# Generate CA key
-openssl req -new -x509 -keyout snakeoil-ca-1.key -out snakeoil-ca-1.crt -days 365 -subj '/CN=localhost/OU=TEST/O=KT' -addext 'subjectAltName = DNS:localhost' -passin pass:ktktkt -passout pass:ktktkt
+# Clean up old certificates and auth files
+rm -f *.crt *.key *.csr *.jks *.srl *_creds auth-ssl.json
 
-for i in broker1
-do
-	echo $i
-	echo ">> 0 <<"
-	keytool -genkey -noprompt \
-				 -alias $i \
-				 -dname "CN=localhost, OU=TEST, O=KT" \
-				 -ext "SAN=DNS:localhost" \
-				 -keystore kafka.$i.keystore.jks \
-				 -keyalg RSA \
-				 -storepass ktktkt \
-				 -keypass ktktkt
-	# Create CSR, sign the key and import back into keystore
-	keytool -keystore kafka.$i.keystore.jks -alias $i -certreq -file $i.csr -storepass ktktkt -keypass ktktkt
-	openssl x509 -req -extfile <(printf "subjectAltName=DNS:localhost") -CA snakeoil-ca-1.crt -CAkey snakeoil-ca-1.key -in $i.csr -out $i-ca1-signed.crt -days 9999 -CAcreateserial -passin pass:ktktkt
-	keytool -keystore kafka.$i.keystore.jks -alias CARoot -import -file snakeoil-ca-1.crt -storepass ktktkt -keypass ktktkt
-	keytool -keystore kafka.$i.keystore.jks -alias $i -import -file $i-ca1-signed.crt -storepass ktktkt -keypass ktktkt
-	# Create truststore and import the CA cert.
-	keytool -keystore kafka.$i.truststore.jks -alias CARoot -import -file snakeoil-ca-1.crt -storepass ktktkt -keypass ktktkt
+# Generate CA private key and certificate
+openssl req -new -x509 -keyout ca.key -out ca.crt -days 365 \
+  -subj '/CN=kafka-ca' -nodes
 
-  echo "ktktkt" > ${i}_sslkey_creds
-  echo "ktktkt" > ${i}_keystore_creds
-  echo "ktktkt" > ${i}_truststore_creds
-done
+# Generate server private key
+openssl genrsa -out server.key 2048
 
-# generate public/private key pair for kt
-openssl genrsa -out kt-test.key 2048
-openssl req -new -key kt-test.key -out kt-test.csr -subj '/CN=localhost/OU=TEST/O=KT' -addext 'subjectAltName = DNS:localhost'
-openssl x509 -req -extfile <(printf "subjectAltName=DNS:localhost") -days 9999 -in kt-test.csr -CA snakeoil-ca-1.crt -CAkey snakeoil-ca-1.key -CAcreateserial -out kt-test.crt
+# Generate server certificate signing request
+openssl req -new -key server.key -out server.csr \
+  -subj '/CN=localhost'
+
+# Generate server certificate signed by CA
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
+  -CAcreateserial -out server.crt -days 365 \
+  -extfile <(echo -e "subjectAltName=DNS:localhost,IP:127.0.0.1")
+
+# Clean up CSR
+rm server.csr
+
+# Convert to PKCS12 format first
+openssl pkcs12 -export -in server.crt -inkey server.key -out server.p12 \
+  -name localhost -CAfile ca.crt -caname ca -password pass:${KEY_PASS}
+
+# Use Docker container to run keytool commands
+KAFKA_IMAGE="apache/kafka:3.8.0"
+CURRENT_DIR=$(pwd)
+
+# Fix permissions for Docker container access
+chmod 644 server.p12 ca.crt
+
+# Create JKS keystore from PKCS12 using Kafka container
+docker run --rm -v "${CURRENT_DIR}:/workspace" -w /workspace --user "$(id -u):$(id -g)" ${KAFKA_IMAGE} \
+  keytool -importkeystore -deststorepass ${STORE_PASS} -destkeypass ${STORE_PASS} \
+  -destkeystore kafka.keystore.jks -srckeystore server.p12 \
+  -srcstoretype PKCS12 -srcstorepass ${KEY_PASS} -alias localhost
+
+# Create truststore and import CA certificate using Kafka container
+docker run --rm -v "${CURRENT_DIR}:/workspace" -w /workspace --user "$(id -u):$(id -g)" ${KAFKA_IMAGE} \
+  keytool -keystore kafka.truststore.jks -alias ca -import -file ca.crt \
+  -storepass ${STORE_PASS} -keypass ${KEY_PASS} -noprompt
+
+# Create credential files
+echo ${STORE_PASS} > kafka_keystore_creds
+echo ${STORE_PASS} > kafka_ssl_key_creds  
+echo ${STORE_PASS} > kafka_truststore_creds
+
+# Clean up intermediate files
+rm server.p12
+
+# Generate auth-ssl.json file for TLS-1way authentication
+cat > auth-ssl.json << EOF
+{
+  "mode": "TLS-1way",
+  "ca-certificate": "test-secrets/ca.crt"
+}
+EOF
+
+echo "Generated certificates and keystores:"
+echo "- ca.crt (CA certificate)"
+echo "- server.crt (Server certificate)"  
+echo "- server.key (Server private key)"
+echo "- kafka.keystore.jks (Server keystore)"
+echo "- kafka.truststore.jks (CA truststore)"
+echo "- kafka_keystore_creds (Keystore password file)"
+echo "- kafka_ssl_key_creds (Key password file)"
+echo "- kafka_truststore_creds (Truststore password file)"
+echo "- auth-ssl.json (SSL authentication config)"

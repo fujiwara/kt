@@ -30,7 +30,7 @@ func parseTimeString(s string) (*time.Time, error) {
 		t := time.Now()
 		return &t, nil
 	}
-	
+
 	if strings.HasPrefix(s, "+") {
 		// Relative time in the future
 		duration, err := time.ParseDuration(s[1:])
@@ -40,7 +40,7 @@ func parseTimeString(s string) (*time.Time, error) {
 		t := time.Now().Add(duration)
 		return &t, nil
 	}
-	
+
 	if strings.HasPrefix(s, "-") {
 		// Relative time in the past
 		duration, err := time.ParseDuration(s[1:])
@@ -50,13 +50,13 @@ func parseTimeString(s string) (*time.Time, error) {
 		t := time.Now().Add(-duration) // Subtract duration for past time
 		return &t, nil
 	}
-	
+
 	// Parse as RFC3339 absolute time
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
 		return nil, fmt.Errorf("invalid time format %q (expected RFC3339): %v", s, err)
 	}
-	
+
 	return &t, nil
 }
 

@@ -92,7 +92,7 @@ func TestParseTimeString(t *testing.T) {
 	for _, d := range data {
 		t.Run(d.name, func(t *testing.T) {
 			result, err := parseTimeString(d.input)
-			
+
 			if d.expectError {
 				if err == nil {
 					t.Errorf("Expected error for input %q, but got none", d.input)
@@ -102,17 +102,17 @@ func TestParseTimeString(t *testing.T) {
 				}
 				return
 			}
-			
+
 			if err != nil {
 				t.Errorf("Unexpected error for input %q: %v", d.input, err)
 				return
 			}
-			
+
 			if result == nil {
 				t.Errorf("Expected non-nil result for input %q", d.input)
 				return
 			}
-			
+
 			// Check time relationships
 			if d.input == "now" {
 				if result.Sub(now).Abs() > time.Second {

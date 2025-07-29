@@ -10,7 +10,7 @@ on:
 jobs:
 
   test:
-    name: kt Test
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
 
@@ -22,8 +22,26 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
 
-    - name: Bring up containers
-      run: docker compose -f test-dependencies.yml up -d
+    - name: Unit Test
+      run: make test
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v5
+      with:
+        go-version: ^1.24
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+
+    - name: Generate test certificates and bring up containers
+      run: |
+        make test-secrets
+        docker compose -f test-dependencies.yml up -d
 
     - name: Wait for Kafka to be ready
       run: |
@@ -33,5 +51,8 @@ jobs:
         timeout 60 bash -c 'until docker logs kt-kafka-1 2>&1 | grep -q "Kafka Server started"; do sleep 2; done'
         echo "Kafka is ready!"
 
-    - name: Test
-      run: make test
+    - name: Integration Test
+      run: make test-integration
+
+    - name: Tear down containers
+      run: docker compose -f test-dependencies.yml down

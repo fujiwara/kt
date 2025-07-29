@@ -451,7 +451,7 @@ func TestParseOffsets(t *testing.T) {
 				}
 				return
 			}
-			
+
 			// Special handling for dynamic timestamp tests
 			if strings.Contains(d.testName, "now") || strings.Contains(d.testName, "relative-implicit") || strings.Contains(d.testName, "mixed-partition") {
 				// Check structure is correct but don't compare exact timestamp values
@@ -504,43 +504,43 @@ Input:    %v
 
 func TestTimestampOffsetParsing(t *testing.T) {
 	now := time.Now()
-	
+
 	// Test "now" parsing
 	result, err := parseOffsets("all=now")
 	if err != nil {
 		t.Fatalf("unexpected error parsing 'now': %v", err)
 	}
-	
+
 	if len(result) != 1 {
 		t.Fatalf("expected 1 interval, got %d", len(result))
 	}
-	
+
 	interval, ok := result[-1]
 	if !ok {
 		t.Fatal("expected interval for partition -1")
 	}
-	
+
 	if !interval.start.relative || !interval.start.timestamp {
 		t.Errorf("expected start to be relative and timestamp, got relative=%v timestamp=%v", interval.start.relative, interval.start.timestamp)
 	}
-	
+
 	// Check that the timestamp is close to current time (within 1 second)
 	actualTime := time.Unix(0, interval.start.start*int64(time.Millisecond))
 	if actualTime.Sub(now).Abs() > time.Second {
 		t.Errorf("'now' timestamp %v should be close to test start time %v", actualTime, now)
 	}
-	
+
 	// Test relative duration parsing
 	result, err = parseOffsets("all=+1h")
 	if err != nil {
 		t.Fatalf("unexpected error parsing '+1h': %v", err)
 	}
-	
+
 	interval = result[-1]
 	if !interval.start.relative || !interval.start.timestamp {
 		t.Errorf("expected start to be relative and timestamp for +1h")
 	}
-	
+
 	// Check that +1h is about 1 hour in the future
 	actualTime = time.Unix(0, interval.start.start*int64(time.Millisecond))
 	expectedTime := now.Add(time.Hour)
@@ -864,7 +864,7 @@ func TestParseUntilTime(t *testing.T) {
 	for _, d := range data {
 		t.Run(d.name, func(t *testing.T) {
 			result, err := parseUntilTime(d.input)
-			
+
 			if d.expectError {
 				if err == nil {
 					t.Errorf("Expected error for input %q, but got none", d.input)
@@ -874,17 +874,17 @@ func TestParseUntilTime(t *testing.T) {
 				}
 				return
 			}
-			
+
 			if err != nil {
 				t.Errorf("Unexpected error for input %q: %v", d.input, err)
 				return
 			}
-			
+
 			if result == nil {
 				t.Errorf("Expected non-nil result for input %q", d.input)
 				return
 			}
-			
+
 			// Check time relationships
 			if d.input == "now" {
 				// "now" should be close to the time we captured at the start
