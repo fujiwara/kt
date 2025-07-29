@@ -1,4 +1,4 @@
-# kt - a Kafka tool that likes JSON [![Continuous Integration](https://github.com/fgeller/kt/actions/workflows/go.yml/badge.svg)](https://github.com/fgeller/kt/actions/workflows/go.yml)
+# kt - a Kafka tool that likes JSON [![Continuous Integration](https://github.com/fujiwara/kt/actions/workflows/go.yml/badge.svg)](https://github.com/fujiwara/kt/actions/workflows/go.yml)
 
 Some reasons why you might be interested:
 
@@ -16,7 +16,7 @@ Some reasons why you might be interested:
 * Basic cluster admin functions: Create & delete topics.
 
 > [!NOTE]
-> I'm not using kt actively myself anymore, so if you think it's lacking some feature - please let me know by creating an issue.
+> This repository is a fork of the original [kt](https://github.com/fgeller/kt).
 
 ## Examples
 
@@ -239,22 +239,7 @@ $ kt <command> <option>
 
 ## Installation
 
-You can download kt via the [Releases](https://github.com/fgeller/kt/releases) section.
-
-Alternatively, the usual way via the go tool, for example:
-
-    $ go install github.com/fgeller/kt/v14@latest
-
-Or via Homebrew on OSX:
-
-    $ brew tap fgeller/tap
-    $ brew install kt
-
-### Docker
-
-[@Paxa](https://github.com/Paxa) maintains an image to run kt in a Docker environment - thanks!
-
-For more information: [https://github.com/Paxa/kt](https://github.com/Paxa/kt)
+You can download kt via the [Releases](https://github.com/fujiwara/kt/releases) section.
 
 ## Usage:
 
@@ -333,5 +318,4 @@ Example:
 ### Other modes
 
 Please create an
-[issue](https://github.com/fgeller/kt/issues/new) with details for the mode that you need.
-
+[issue](https://github.com/fujiwara/kt/issues/new) with details for the mode that you need.
