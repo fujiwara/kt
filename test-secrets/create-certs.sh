@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Configuration - Use same password for simplicity
+STORE_PASS="kafkapass"
+KEY_PASS="kafkapass"
+
 # Clean up old certificates
 rm -f *.crt *.key *.csr *.jks *.srl *_creds
 
@@ -23,7 +27,42 @@ openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
 # Clean up CSR
 rm server.csr
 
-echo "Generated certificates:"
+# Convert to PKCS12 format first
+openssl pkcs12 -export -in server.crt -inkey server.key -out server.p12 \
+  -name localhost -CAfile ca.crt -caname ca -password pass:${KEY_PASS}
+
+# Use Docker container to run keytool commands
+KAFKA_IMAGE="apache/kafka:3.8.0"
+CURRENT_DIR=$(pwd)
+
+# Fix permissions for Docker container access
+chmod 644 server.p12 ca.crt
+
+# Create JKS keystore from PKCS12 using Kafka container
+docker run --rm -v "${CURRENT_DIR}:/workspace" -w /workspace --user "$(id -u):$(id -g)" ${KAFKA_IMAGE} \
+  keytool -importkeystore -deststorepass ${STORE_PASS} -destkeypass ${STORE_PASS} \
+  -destkeystore kafka.keystore.jks -srckeystore server.p12 \
+  -srcstoretype PKCS12 -srcstorepass ${KEY_PASS} -alias localhost
+
+# Create truststore and import CA certificate using Kafka container
+docker run --rm -v "${CURRENT_DIR}:/workspace" -w /workspace --user "$(id -u):$(id -g)" ${KAFKA_IMAGE} \
+  keytool -keystore kafka.truststore.jks -alias ca -import -file ca.crt \
+  -storepass ${STORE_PASS} -keypass ${KEY_PASS} -noprompt
+
+# Create credential files
+echo ${STORE_PASS} > kafka_keystore_creds
+echo ${STORE_PASS} > kafka_ssl_key_creds  
+echo ${STORE_PASS} > kafka_truststore_creds
+
+# Clean up intermediate files
+rm server.p12
+
+echo "Generated certificates and keystores:"
 echo "- ca.crt (CA certificate)"
 echo "- server.crt (Server certificate)"  
 echo "- server.key (Server private key)"
+echo "- kafka.keystore.jks (Server keystore)"
+echo "- kafka.truststore.jks (CA truststore)"
+echo "- kafka_keystore_creds (Keystore password file)"
+echo "- kafka_ssl_key_creds (Key password file)"
+echo "- kafka_truststore_creds (Truststore password file)"
