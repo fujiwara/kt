@@ -38,11 +38,10 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
 
-    - name: Generate test certificates
-      run: make test-secrets
-
-    - name: Bring up containers
-      run: docker compose -f test-dependencies.yml up -d
+    - name: Generate test certificates and bring up containers
+      run: |
+        make test-secrets
+        docker compose -f test-dependencies.yml up -d
 
     - name: Wait for Kafka to be ready
       run: |
