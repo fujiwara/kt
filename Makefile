@@ -19,7 +19,7 @@ dep-down:
 test: clean
 	go test -v -vet=all -failfast -race
 
-test-integration: clean test-secrets
+test-integration: clean
 	go test -v -vet=all -failfast -race -tags=integration
 
 .PHONY: test-secrets test-integration
