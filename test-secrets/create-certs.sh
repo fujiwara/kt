@@ -5,8 +5,8 @@ set -e
 STORE_PASS="kafkapass"
 KEY_PASS="kafkapass"
 
-# Clean up old certificates
-rm -f *.crt *.key *.csr *.jks *.srl *_creds
+# Clean up old certificates and auth files
+rm -f *.crt *.key *.csr *.jks *.srl *_creds auth-ssl.json
 
 # Generate CA private key and certificate
 openssl req -new -x509 -keyout ca.key -out ca.crt -days 365 \
@@ -57,6 +57,14 @@ echo ${STORE_PASS} > kafka_truststore_creds
 # Clean up intermediate files
 rm server.p12
 
+# Generate auth-ssl.json file for TLS-1way authentication
+cat > auth-ssl.json << EOF
+{
+  "mode": "TLS-1way",
+  "ca-certificate": "test-secrets/ca.crt"
+}
+EOF
+
 echo "Generated certificates and keystores:"
 echo "- ca.crt (CA certificate)"
 echo "- server.crt (Server certificate)"  
@@ -66,3 +74,4 @@ echo "- kafka.truststore.jks (CA truststore)"
 echo "- kafka_keystore_creds (Keystore password file)"
 echo "- kafka_ssl_key_creds (Key password file)"
 echo "- kafka_truststore_creds (Truststore password file)"
+echo "- auth-ssl.json (SSL authentication config)"

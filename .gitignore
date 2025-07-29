@@ -2,3 +2,11 @@
 /quickfix
 .idea/*
 .vscode/*
+
+# Test certificates and keys - generated dynamically
+test-secrets/*.crt
+test-secrets/*.key
+test-secrets/*.jks
+test-secrets/*.srl
+test-secrets/*_creds
+test-secrets/auth-ssl.json
