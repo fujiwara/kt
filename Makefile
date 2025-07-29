@@ -29,6 +29,7 @@ test-secrets:
 clean:
 	rm -f kt
 	rm -rf dist/
+	rm -f test-secrets/*.crt test-secrets/*.key test-secrets/*.jks test-secrets/*.srl test-secrets/*_creds test-secrets/auth-ssl.json
 
 run: build
 	./kt
