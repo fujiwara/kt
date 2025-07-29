@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"reflect"
 	"sort"
@@ -903,3 +904,177 @@ func TestParseUntilTime(t *testing.T) {
 		})
 	}
 }
+
+func TestUntilTimeStopBehavior(t *testing.T) {
+	// Test that partition consumer stops when high water mark is reached with until time
+	now := time.Now()
+	pastTime := now.Add(-1 * time.Hour)
+	futureTime := now.Add(1 * time.Hour)
+
+	// Create test messages with timestamps
+	oldMessage := &sarama.ConsumerMessage{
+		Topic:     "test-topic",
+		Partition: 0,
+		Offset:    0,
+		Timestamp: pastTime,
+		Value:     []byte("old message"),
+	}
+
+	recentMessage := &sarama.ConsumerMessage{
+		Topic:     "test-topic",
+		Partition: 0,
+		Offset:    1,
+		Timestamp: now.Add(-30 * time.Minute),
+		Value:     []byte("recent message"),
+	}
+
+	// Test partition consumer with until time
+	t.Run("partition-consumer-stops-at-high-water-mark-with-until", func(t *testing.T) {
+		messageChan := make(chan *sarama.ConsumerMessage, 2)
+		messageChan <- oldMessage
+		messageChan <- recentMessage
+		close(messageChan)
+
+		pc := tPartitionConsumer{
+			messages:            messageChan,
+			highWaterMarkOffset: 2, // High water mark at offset 2
+		}
+
+		cmd := &consumeCmd{
+			until:        &now,
+			untilReached: make(chan struct{}, 1),
+		}
+
+		out := make(chan printContext, 2)
+		// Process messages in background
+		go func() {
+			for ctx := range out {
+				close(ctx.done)
+			}
+		}()
+
+		p := int32(0)
+		end := int64(1<<63 - 1) // Max end offset
+		go cmd.partitionLoop(out, pc, p, end)
+
+		// Should receive until reached signal
+		select {
+		case <-cmd.untilReached:
+			// Expected behavior - consumer should stop when reaching high water mark with until time
+		case <-time.After(1 * time.Second):
+			t.Error("Expected consumer to stop when reaching high water mark with until time")
+		}
+	})
+
+	// Test consumer group handler with until time
+	t.Run("consumer-group-handler-stops-at-high-water-mark-with-until", func(t *testing.T) {
+		messageChan := make(chan *sarama.ConsumerMessage, 2)
+		messageChan <- oldMessage
+		messageChan <- recentMessage
+		close(messageChan)
+
+		claim := &tConsumerGroupClaim{
+			messages:            messageChan,
+			partition:           0,
+			highWaterMarkOffset: 2, // High water mark at offset 2
+		}
+
+		session := &tConsumerGroupSession{
+			ctx: context.Background(),
+		}
+
+		cmd := &consumeCmd{
+			until:        &now,
+			untilReached: make(chan struct{}, 1),
+			shutdown:     make(chan struct{}),
+		}
+
+		out := make(chan printContext, 2)
+		handler := &ConsumerGroupHandler{
+			cmd: cmd,
+			out: out,
+		}
+
+		// Process messages in background
+		go func() {
+			for ctx := range out {
+				close(ctx.done)
+			}
+		}()
+
+		go handler.ConsumeClaim(session, claim)
+
+		// Should receive until reached signal
+		select {
+		case <-cmd.untilReached:
+			// Expected behavior - handler should stop when reaching high water mark with until time
+		case <-time.After(1 * time.Second):
+			t.Error("Expected consumer group handler to stop when reaching high water mark with until time")
+		}
+	})
+
+	// Test that consumer doesn't stop if until time is in the future
+	t.Run("partition-consumer-continues-with-future-until", func(t *testing.T) {
+		messageChan := make(chan *sarama.ConsumerMessage, 1)
+		messageChan <- oldMessage
+		close(messageChan)
+
+		pc := tPartitionConsumer{
+			messages:            messageChan,
+			highWaterMarkOffset: 1, // High water mark at offset 1
+		}
+
+		cmd := &consumeCmd{
+			until:        &futureTime, // Until time is in the future
+			untilReached: make(chan struct{}, 1),
+		}
+
+		out := make(chan printContext, 1)
+		// Process messages in background
+		go func() {
+			for ctx := range out {
+				close(ctx.done)
+			}
+		}()
+
+		p := int32(0)
+		end := int64(1<<63 - 1) // Max end offset
+		go cmd.partitionLoop(out, pc, p, end)
+
+		// Should NOT receive until reached signal quickly
+		select {
+		case <-cmd.untilReached:
+			t.Error("Consumer should not stop when until time is in the future")
+		case <-time.After(100 * time.Millisecond):
+			// Expected behavior - consumer should continue waiting
+		}
+	})
+}
+
+// Test helper types for consumer group testing
+type tConsumerGroupClaim struct {
+	messages            chan *sarama.ConsumerMessage
+	partition           int32
+	highWaterMarkOffset int64
+}
+
+func (c *tConsumerGroupClaim) Topic() string                            { return "test-topic" }
+func (c *tConsumerGroupClaim) Partition() int32                         { return c.partition }
+func (c *tConsumerGroupClaim) InitialOffset() int64                     { return 0 }
+func (c *tConsumerGroupClaim) HighWaterMarkOffset() int64               { return c.highWaterMarkOffset }
+func (c *tConsumerGroupClaim) Messages() <-chan *sarama.ConsumerMessage { return c.messages }
+
+type tConsumerGroupSession struct {
+	ctx context.Context
+}
+
+func (s *tConsumerGroupSession) Claims() map[string][]int32 { return nil }
+func (s *tConsumerGroupSession) MemberID() string           { return "test-member" }
+func (s *tConsumerGroupSession) GenerationID() int32        { return 1 }
+func (s *tConsumerGroupSession) MarkOffset(topic string, partition int32, offset int64, metadata string) {
+}
+func (s *tConsumerGroupSession) ResetOffset(topic string, partition int32, offset int64, metadata string) {
+}
+func (s *tConsumerGroupSession) MarkMessage(msg *sarama.ConsumerMessage, metadata string) {}
+func (s *tConsumerGroupSession) Context() context.Context                                 { return s.ctx }
+func (s *tConsumerGroupSession) Commit()                                                  {}

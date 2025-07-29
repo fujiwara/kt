@@ -71,6 +71,7 @@ func (h *ConsumerGroupHandler) Cleanup(session sarama.ConsumerGroupSession) erro
 
 func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	debugf(h.cmd, "ConsumeClaim starting for partition %v, member ID: %s\n", claim.Partition(), session.MemberID())
+	highWaterMark := claim.HighWaterMarkOffset()
 
 	for {
 		select {
@@ -105,6 +106,20 @@ func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 				<-ctx.done
 				// Mark message as processed
 				session.MarkMessage(msg, "")
+
+				// Check if we've reached the high water mark and until time is set
+				if h.cmd.until != nil && msg.Offset >= highWaterMark-1 {
+					// We've consumed all available messages, check if we should stop due to until time
+					if time.Now().After(*h.cmd.until) {
+						h.cmd.infof("consumer group handler reached end of available messages with until time %v for partition %v\n", h.cmd.until.Format(time.RFC3339), claim.Partition())
+						// Signal that until time was reached
+						select {
+						case h.cmd.untilReached <- struct{}{}:
+						default:
+						}
+						return nil
+					}
+				}
 			case <-h.cmd.shutdown:
 				h.cmd.infof("shutdown during message processing for partition %v\n", claim.Partition())
 				return nil
@@ -955,6 +970,21 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 
 			if end > 0 && msg.Offset >= end {
 				return
+			}
+
+			// Check if we've reached the high water mark and until time is set
+			if cmd.until != nil && msg.Offset >= pc.HighWaterMarkOffset()-1 {
+				// We've consumed all available messages, check if we should stop due to until time
+				// Since all remaining messages would be newer than the until time, we can stop
+				if time.Now().After(*cmd.until) {
+					warnf("partition %v consumer reached end of available messages with until time %v\n", p, cmd.until.Format(time.RFC3339))
+					// Signal that until time was reached
+					select {
+					case cmd.untilReached <- struct{}{}:
+					default:
+					}
+					return
+				}
 			}
 		}
 	}
