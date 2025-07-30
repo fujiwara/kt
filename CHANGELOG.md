@@ -1,5 +1,8 @@
 # Changelog
 
+## [v14.0.3](https://github.com/fujiwara/kt/compare/v14.0.2...v14.0.3) - 2025-07-29
+- Fix infinite wait issue with -until flag when no new messages arrive by @fujiwara in https://github.com/fujiwara/kt/pull/11
+
 ## [v14.0.2](https://github.com/fujiwara/kt/compare/v14.0.1...v14.0.2) - 2025-07-29
 - Improve SSL certificate management and separate unit/integration tests by @fujiwara in https://github.com/fujiwara/kt/pull/8
 - update go modules by @fujiwara in https://github.com/fujiwara/kt/pull/10
