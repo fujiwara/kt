@@ -10,7 +10,7 @@ Some reasons why you might be interested:
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
 * Configure brokers, topic, Kafka version and authentication via environment variables `KT_BROKERS`, `KT_TOPIC`, `KT_KAFKA_VERSION` and `KT_AUTH`.
 * Fast start up time.
-* No buffering of output.
+* Optimized output buffering: Automatic buffering when output is redirected to files or pipes for improved performance, while maintaining immediate output to terminals.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding.
 * Support for TLS authentication.
 * Basic cluster admin functions: Create & delete topics.

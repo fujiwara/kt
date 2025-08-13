@@ -8,7 +8,7 @@ require (
 	github.com/IBM/sarama v1.45.2
 	github.com/davecgh/go-spew v1.1.1
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/crypto v0.40.0
+	golang.org/x/term v0.33.0
 )
 
 require (
@@ -30,8 +30,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
+	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/term v0.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

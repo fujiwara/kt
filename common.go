@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -11,12 +12,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf16"
 
 	"github.com/IBM/sarama"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 // parseTimeString parses a time string that can be either:
@@ -78,6 +80,29 @@ type baseCmd struct {
 	verbose bool
 }
 
+var (
+	stdoutWriter io.Writer
+	stdoutBuffer *bufio.Writer
+	outputMutex  sync.Mutex
+)
+
+func init() {
+	if term.IsTerminal(int(syscall.Stdout)) {
+		stdoutWriter = os.Stdout
+	} else {
+		stdoutBuffer = bufio.NewWriter(os.Stdout)
+		stdoutWriter = stdoutBuffer
+	}
+}
+
+func flushOutput() {
+	outputMutex.Lock()
+	defer outputMutex.Unlock()
+	if stdoutBuffer != nil {
+		stdoutBuffer.Flush()
+	}
+}
+
 func (b *baseCmd) infof(msg string, args ...interface{}) {
 	if b.verbose {
 		warnf(msg, args...)
@@ -89,7 +114,9 @@ func warnf(msg string, args ...interface{}) {
 }
 
 func outf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stdout, msg, args...)
+	outputMutex.Lock()
+	defer outputMutex.Unlock()
+	fmt.Fprintf(stdoutWriter, msg, args...)
 }
 
 func logClose(name string, c io.Closer) {
@@ -121,7 +148,7 @@ func print(in <-chan printContext, pretty bool) {
 		marshal = json.Marshal
 	)
 
-	if pretty && terminal.IsTerminal(int(syscall.Stdout)) {
+	if pretty && term.IsTerminal(int(syscall.Stdout)) {
 		marshal = func(i interface{}) ([]byte, error) { return json.MarshalIndent(i, "", "  ") }
 	}
 
@@ -131,7 +158,9 @@ func print(in <-chan printContext, pretty bool) {
 			failf("failed to marshal output %#v, err=%v", ctx.output, err)
 		}
 
-		fmt.Println(string(buf))
+		outputMutex.Lock()
+		fmt.Fprintln(stdoutWriter, string(buf))
+		outputMutex.Unlock()
 		close(ctx.done)
 	}
 }
@@ -150,6 +179,7 @@ func exitf(code int, msg string, args ...interface{}) {
 	} else {
 		warnf(msg+"\n", args...)
 	}
+	flushOutput()
 	os.Exit(code)
 }
 

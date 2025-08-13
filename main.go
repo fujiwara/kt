@@ -59,6 +59,8 @@ You can find more details at https://github.com/fgeller/kt
 %s`, ENV_AUTH, versionMessage)
 
 func main() {
+	defer flushOutput()
+
 	if len(os.Args) < 2 {
 		failf(usageMessage)
 	}
