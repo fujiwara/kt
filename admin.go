@@ -1,9 +1,9 @@
 package main
 
 import (
-	json "github.com/goccy/go-json"
 	"flag"
 	"fmt"
+	json "github.com/goccy/go-json"
 	"log"
 	"os"
 	"os/user"

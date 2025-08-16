@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
 	"crypto/x509"
-	json "github.com/goccy/go-json"
 	"fmt"
+	json "github.com/goccy/go-json"
 	"io"
 	"math/rand"
 	"os"
@@ -18,6 +19,30 @@ import (
 	"github.com/IBM/sarama"
 	"golang.org/x/crypto/ssh/terminal"
 )
+
+var (
+	stdoutWriter   io.Writer
+	bufferedWriter *bufio.Writer
+)
+
+func init() {
+	setupOutputBuffering()
+}
+
+func setupOutputBuffering() {
+	if terminal.IsTerminal(int(os.Stdout.Fd())) {
+		stdoutWriter = os.Stdout
+	} else {
+		bufferedWriter = bufio.NewWriter(os.Stdout)
+		stdoutWriter = bufferedWriter
+	}
+}
+
+func flushOutput() {
+	if bufferedWriter != nil {
+		bufferedWriter.Flush()
+	}
+}
 
 // parseTimeString parses a time string that can be either:
 // - Current time: "now"
@@ -89,7 +114,7 @@ func warnf(msg string, args ...interface{}) {
 }
 
 func outf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stdout, msg, args...)
+	fmt.Fprintf(stdoutWriter, msg, args...)
 }
 
 func logClose(name string, c io.Closer) {
@@ -131,7 +156,8 @@ func print(in <-chan printContext, pretty bool) {
 			failf("failed to marshal output %#v, err=%v", ctx.output, err)
 		}
 
-		fmt.Println(string(buf))
+		fmt.Fprintln(stdoutWriter, string(buf))
+		flushOutput()
 		close(ctx.done)
 	}
 }
@@ -150,6 +176,7 @@ func exitf(code int, msg string, args ...interface{}) {
 	} else {
 		warnf(msg+"\n", args...)
 	}
+	flushOutput()
 	os.Exit(code)
 }
 
