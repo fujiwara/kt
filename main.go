@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-const AppVersion = "v14.1.0"
+const AppVersion = "v14.1.1"
 
 var buildVersion, buildTime string
 
