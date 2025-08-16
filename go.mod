@@ -1,12 +1,11 @@
-module github.com/fgeller/kt/v14
+module github.com/fujiwara/kt/v14
 
 go 1.23.0
-
-toolchain go1.24.5
 
 require (
 	github.com/IBM/sarama v1.45.2
 	github.com/davecgh/go-spew v1.1.1
+	github.com/goccy/go-json v0.10.4
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.40.0
 )
