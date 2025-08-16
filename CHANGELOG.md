@@ -1,5 +1,7 @@
 # Changelog
 
+## [v14.1.1](https://github.com/fujiwara/kt/compare/v14.1.0...v14.1.1) - 2025-08-16
+
 ## [v14.1.0](https://github.com/fujiwara/kt/compare/v14.0.3...v14.1.0) - 2025-08-16
 - switch to goccy/go-json by @fujiwara in https://github.com/fujiwara/kt/pull/13
 - Add adaptive output buffering by @fujiwara in https://github.com/fujiwara/kt/pull/15
