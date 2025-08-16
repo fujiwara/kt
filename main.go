@@ -84,4 +84,5 @@ func main() {
 	}
 
 	cmd.run(os.Args[2:])
+	flushOutput()
 }

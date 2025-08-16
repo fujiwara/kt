@@ -4,8 +4,8 @@ package main
 
 import (
 	"bytes"
-	json "github.com/goccy/go-json"
 	"fmt"
+	json "github.com/goccy/go-json"
 	"os"
 	"os/exec"
 	"sort"
