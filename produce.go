@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	json "github.com/goccy/go-json"
 	"log"
 	"os"
 	"os/signal"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
+	json "github.com/goccy/go-json"
 )
 
 type produceArgs struct {
@@ -26,6 +26,7 @@ type produceArgs struct {
 	timeout     time.Duration
 	verbose     bool
 	pretty      bool
+	quiet       bool
 	version     string
 	compression string
 	literal     bool
@@ -52,6 +53,7 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
 	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
+	flags.BoolVar(&args.quiet, "quiet", false, "Quiet output, only show errors")
 	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.compression, "compression", "", "Kafka message compression codec [gzip|snappy|lz4] (defaults to none)")
@@ -126,6 +128,7 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.timeout = args.timeout
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
+	cmd.quiet = args.quiet
 	cmd.literal = args.literal
 	cmd.partition = int32(args.partition)
 	cmd.partitioner = args.partitioner
@@ -239,6 +242,7 @@ type produceCmd struct {
 	batch       int
 	timeout     time.Duration
 	pretty      bool
+	quiet       bool
 	literal     bool
 	partition   int32
 	version     sarama.KafkaVersion
@@ -264,11 +268,14 @@ func (cmd *produceCmd) run(as []string) {
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
 	out := make(chan printContext)
+	if cmd.quiet {
+		go quietPrint(out)
+	} else {
+		go print(out, cmd.pretty)
+	}
 	q := make(chan struct{})
 
 	go cmd.readStdinLines(cmd.bufferSize, stdin)
-	go print(out, cmd.pretty)
-
 	go cmd.listenForInterrupt(q)
 	go cmd.readInput(q, stdin, lines)
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))

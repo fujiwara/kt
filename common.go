@@ -162,6 +162,13 @@ func print(in <-chan printContext, pretty bool) {
 	}
 }
 
+func quietPrint(in <-chan printContext) {
+	for {
+		ctx := <-in
+		close(ctx.done)
+	}
+}
+
 func quitf(msg string, args ...interface{}) {
 	exitf(0, msg, args...)
 }
