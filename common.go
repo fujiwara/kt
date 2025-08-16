@@ -3,7 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	json "github.com/goccy/go-json"
 	"fmt"
 	"io"
 	"math/rand"

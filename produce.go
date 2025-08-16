@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	json "github.com/goccy/go-json"
 	"flag"
 	"fmt"
 	"log"
