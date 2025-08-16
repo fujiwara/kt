@@ -239,7 +239,21 @@ $ kt <command> <option>
 
 ## Installation
 
+### Release binaries
+
 You can download kt via the [Releases](https://github.com/fujiwara/kt/releases) section.
+
+### Homebrew
+
+```sh
+$ brew install fujiwara/tap/kt
+```
+
+### Go install
+
+```console
+$ go install github.com/fujiwara/kt/v14@latest
+```
 
 ## Usage:
 
