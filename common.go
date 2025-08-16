@@ -20,6 +20,11 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
+const (
+	// Periodic flush interval for buffered output to pipes/files
+	flushInterval = 250 * time.Millisecond
+)
+
 var (
 	stdoutWriter   io.Writer
 	bufferedWriter *bufio.Writer
@@ -35,6 +40,16 @@ func setupOutputBuffering() {
 	} else {
 		bufferedWriter = bufio.NewWriter(os.Stdout)
 		stdoutWriter = bufferedWriter
+		// Start periodic flushing for non-tty output
+		go periodicFlush()
+	}
+}
+
+func periodicFlush() {
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		flushOutput()
 	}
 }
 
