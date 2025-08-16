@@ -156,8 +156,8 @@ func print(in <-chan printContext, pretty bool) {
 			failf("failed to marshal output %#v, err=%v", ctx.output, err)
 		}
 
-		fmt.Fprintln(stdoutWriter, string(buf))
-		flushOutput()
+		stdoutWriter.Write(buf)
+		stdoutWriter.Write([]byte{'\n'})
 		close(ctx.done)
 	}
 }
