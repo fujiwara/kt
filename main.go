@@ -33,34 +33,6 @@ func init() {
 	versionMessage += ")"
 }
 
-var usageMessage = fmt.Sprintf(`kt is a tool for Kafka.
-
-Usage:
-
-	kt command [arguments]
-
-The commands are:
-
-	consume    consume messages.
-	produce    produce messages.
-	topic      topic information.
-	group      consumer group information and modification.
-	admin      basic cluster administration.
-
-Use "kt [command] -help" for more information about the command.
-
-Use "kt -version" for details on what version you are running.
-
-Authentication:
-
-Authentication with Kafka can be configured via a JSON file.
-You can set the file name via an "-auth" flag to each command or
-set it via the environment variable %s.
-
-You can find more details at https://github.com/fgeller/kt
-
-%s`, ENV_AUTH, versionMessage)
-
 type CLI struct {
 	Consume *consumeCmd      `cmd:"" help:"consume messages."`
 	Produce *produceCmd      `cmd:"" help:"produce messages."`
@@ -87,8 +59,6 @@ func main() {
 		cli.Group.run()
 	case "produce":
 		cli.Produce.run()
-	default:
-		mainLegacy(os.Args)
 	}
 }
 
@@ -105,34 +75,3 @@ func parseKong(args []string) (string, *CLI, error) {
 	return strings.Fields(kongCtx.Command())[0], &cli, nil
 }
 
-func mainLegacy(args []string) {
-	if len(args) < 2 {
-		failf(usageMessage)
-	}
-	var cmd command
-	switch args[1] {
-	case "consume":
-		// cmd = &consumeCmd{}
-		failf("consume command is now handled by Kong")
-	case "produce":
-		// cmd = &produceCmd{}
-		failf("produce command is now handled by Kong")
-	case "topic":
-		// cmd = &topicCmd{}
-		failf("xxx")
-	case "group":
-		// cmd = &groupCmd{}
-		failf("group command is now handled by Kong")
-	case "admin":
-		// cmd = &adminCmd{}
-		failf("admin command is now handled by Kong")
-	case "-h", "-help", "--help":
-		quitf(usageMessage)
-	case "-version", "--version":
-		quitf(versionMessage)
-	default:
-		failf(usageMessage)
-	}
-
-	cmd.run(args[2:])
-}

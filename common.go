@@ -113,9 +113,6 @@ const (
 
 var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
-type command interface {
-	run(args []string)
-}
 
 type baseCmd struct {
 	Pretty          bool     `help:"Control output pretty printing." default:"true" negatable:""`
