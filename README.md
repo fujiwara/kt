@@ -3,12 +3,12 @@
 Some reasons why you might be interested:
 
 * Consume messages on specific partitions between specific offsets.
-* **Time-based offset consumption**: Start consuming from specific timestamps (RFC3339), relative times (e.g., `-1h`, `+30m`), or current time (`now`).
+* Time-based offset consumption: Start consuming from specific timestamps (RFC3339), relative times (e.g., `-1h`, `+30m`), or current time (`now`).
 * Display topic information (e.g., with partition offset and leader info).
 * Modify consumer group offsets (e.g., resetting or manually setting offsets per topic and per partition).
-* JSON output for easy consumption with tools like [kp](https://github.com/echojc/kp) or [jq](https://stedolan.github.io/jq/).
+* Built-in jq integration: Apply [jq](https://stedolan.github.io/jq/) filters directly to output using [gojq](https://github.com/itchyny/gojq) without external piping, with support for raw string output.
 * JSON input to facilitate automation via tools like [jsonify](https://github.com/fgeller/jsonify).
-* Configure brokers, topic, Kafka version and authentication via environment variables `KT_BROKERS`, `KT_TOPIC`, `KT_KAFKA_VERSION` and `KT_AUTH`.
+* Configure brokers, topic, Kafka version and authentication via environment variables `KT_BROKERS`, `KT_TOPIC`, `KT_KAFKA_VERSION`, `KT_AUTH`, and `KT_ADMIN_TIMEOUT`.
 * Fast start up time.
 * Adaptive output buffering: unbuffered for terminals, buffered for pipes and files to improve performance.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding.
@@ -85,6 +85,23 @@ $ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt 
   "partition": 0,
   "startOffset": 5
 }
+```
+</details>
+
+<details><summary>Advanced produce options</summary>
+
+```sh
+# With compression (gzip, snappy, lz4)
+$ echo 'Compressed message' | kt produce --topic actor-news --literal --compression gzip
+
+# With custom partitioner
+$ echo '{"value": "message", "key": "test"}' | kt produce --topic actor-news --partitioner hashCode
+
+# With batch processing and buffer size
+$ cat messages.json | kt produce --topic actor-news --batch 100 --buffer-size 16384
+
+# Decode input from base64 or hex
+$ echo 'aGVsbG8gd29ybGQ=' | kt produce --topic actor-news --decode-value base64 --literal
 ```
 </details>
 
@@ -214,6 +231,26 @@ found 1 topics
 ```
 </details>
 
+<details><summary>Advanced group operations</summary>
+
+```sh
+# Filter groups by name pattern
+$ kt group --filter-groups "^test-.*"
+
+# Filter topics by name pattern with group info
+$ kt group --group my-group --filter-topics "^actor-.*"
+
+# Reset consumer group offset to specific timestamp
+$ kt group --group my-group --topic actor-news --reset "2023-12-01T15:00:00Z"
+
+# Reset to specific offset number
+$ kt group --group my-group --topic actor-news --partitions 0,1 --reset 100
+
+# Show offsets without fetching additional data
+$ kt group --group my-group --offsets
+```
+</details>
+
 <details><summary>Create and delete a topic</summary>
 
 ```sh
@@ -233,6 +270,30 @@ $ kt topic --filter news
 ```sh
 $ export KT_BROKERS=brokers.kafka:9092
 $ kt <command> <option>
+```
+
+</details>
+
+<details><summary>Using jq filters and raw output</summary>
+
+```sh
+# Apply jq filter to extract specific fields
+$ kt consume --topic actor-news --offsets 0=0:1 --jq '.value'
+"Bourne sequel 6 in production."
+
+# Use raw output (like jq -r) to get unquoted strings
+$ kt consume --topic actor-news --offsets 0=0:1 --jq '.value' --raw
+Bourne sequel 6 in production.
+
+# Extract and parse JSON values
+$ kt consume --topic json-data --jq '.value | fromjson | .field'
+
+# Filter messages by key
+$ kt consume --topic actor-news --jq 'select(.key == "Arni")'
+
+# Control pretty printing (enabled by default for terminals)
+$ kt consume --topic actor-news --offsets 0=0:1 --no-pretty
+{"partition":0,"offset":0,"key":"","value":"Alice wins Oscar","timestamp":"1970-01-01T00:59:59.999+01:00"}
 ```
 
 </details>
@@ -329,6 +390,22 @@ Example:
 
     {
         "mode": "TLS-1way"
+    }
+
+### SASL
+
+Required fields:
+
+ - `mode`: This needs to be set to `SASL`
+ - `sasl_plain_user`: SASL username
+ - `sasl_plain_password`: SASL password
+
+Example:
+
+    {
+        "mode": "SASL",
+        "sasl_plain_user": "your_username",
+        "sasl_plain_password": "your_password"
     }
 
 ### Other modes
