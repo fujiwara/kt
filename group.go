@@ -41,10 +41,35 @@ type group struct {
 	Offsets []groupOffset `json:"offsets,omitempty"`
 }
 
+func (g group) ToMap() map[string]any {
+	off := make([]any, len(g.Offsets))
+	for i, o := range g.Offsets {
+		off[i] = o.ToMap()
+	}
+	m := map[string]any{
+		"name": g.Name,
+	}
+	if g.Topic != "" {
+		m["topic"] = g.Topic
+	}
+	if len(off) > 0 {
+		m["offsets"] = off
+	}
+	return m
+}
+
 type groupOffset struct {
 	Partition int32  `json:"partition"`
 	Offset    *int64 `json:"offset"`
 	Lag       *int64 `json:"lag"`
+}
+
+func (o groupOffset) ToMap() map[string]any {
+	return map[string]any{
+		"partition": o.Partition,
+		"offset":    ptrToValue(o.Offset),
+		"lag":       ptrToValue(o.Lag),
+	}
 }
 
 const (
@@ -95,7 +120,7 @@ func (cmd *groupCmd) run(args []string) {
 
 	if !cmd.offsets {
 		for i, grp := range groups {
-			ctx := printContext{output: group{Name: grp}, done: make(chan struct{})}
+			ctx := printContext{output: group{Name: grp}, done: make(chan struct{}), cmd: cmd.baseCmd}
 			out <- ctx
 			<-ctx.done
 
@@ -153,7 +178,7 @@ awaitGroupOffsets:
 		sort.Slice(target.Offsets, func(i, j int) bool {
 			return target.Offsets[j].Partition > target.Offsets[i].Partition
 		})
-		ctx := printContext{output: target, done: make(chan struct{})}
+		ctx := printContext{output: target, done: make(chan struct{}), cmd: cmd.baseCmd}
 		out <- ctx
 		<-ctx.done
 	}
@@ -347,6 +372,12 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
+	cmd.jq = args.jq
+	cmd.raw = args.raw
+	if err := cmd.prepare(); err != nil {
+		failf("failed to prepare jq query err=%v", err)
+	}
+
 	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
 	if err != nil {
 		failf("failed to read kafka version err=%v", err)
@@ -441,6 +472,8 @@ type groupArgs struct {
 	pretty       bool
 	version      string
 	offsets      bool
+	jq           string
+	raw          bool
 }
 
 func (cmd *groupCmd) parseFlags(as []string) groupArgs {
@@ -458,6 +491,8 @@ func (cmd *groupCmd) parseFlags(as []string) groupArgs {
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
 	flags.StringVar(&args.partitions, "partitions", allPartitionsHuman, "comma separated list of partitions to limit offsets to, or all")
 	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defaults to true)")
+	flags.StringVar(&args.jq, "jq", "", "Apply jq filter to output (e.g., '.name').")
+	flags.BoolVar(&args.raw, "raw", false, "Output raw strings without JSON encoding (like jq -r).")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of group:")

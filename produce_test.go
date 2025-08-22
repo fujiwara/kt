@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/stretchr/testify/require"
 )
 
 func TestHashCode(t *testing.T) {
@@ -202,25 +201,43 @@ func TestMakeSaramaMessage(t *testing.T) {
 	key, value := "key", "value"
 	msg := message{Key: &key, Value: &value}
 	actual, err := target.makeSaramaMessage(msg)
-	require.Nil(t, err)
-	require.Equal(t, []byte(key), actual.Key)
-	require.Equal(t, []byte(value), actual.Value)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual([]byte(key), actual.Key) {
+		t.Errorf("expected key %v, got %v", []byte(key), actual.Key)
+	}
+	if !reflect.DeepEqual([]byte(value), actual.Value) {
+		t.Errorf("expected value %v, got %v", []byte(value), actual.Value)
+	}
 
 	target.decodeKey, target.decodeValue = "hex", "hex"
 	key, value = "41", "42"
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
-	require.Nil(t, err)
-	require.Equal(t, []byte("A"), actual.Key)
-	require.Equal(t, []byte("B"), actual.Value)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual([]byte("A"), actual.Key) {
+		t.Errorf("expected key %v, got %v", []byte("A"), actual.Key)
+	}
+	if !reflect.DeepEqual([]byte("B"), actual.Value) {
+		t.Errorf("expected value %v, got %v", []byte("B"), actual.Value)
+	}
 
 	target.decodeKey, target.decodeValue = "base64", "base64"
 	key, value = "aGFucw==", "cGV0ZXI="
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
-	require.Nil(t, err)
-	require.Equal(t, []byte("hans"), actual.Key)
-	require.Equal(t, []byte("peter"), actual.Value)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual([]byte("hans"), actual.Key) {
+		t.Errorf("expected key %v, got %v", []byte("hans"), actual.Key)
+	}
+	if !reflect.DeepEqual([]byte("peter"), actual.Value) {
+		t.Errorf("expected value %v, got %v", []byte("peter"), actual.Value)
+	}
 }
 
 func TestDeserializeLines(t *testing.T) {
@@ -282,5 +299,57 @@ func TestDeserializeLines(t *testing.T) {
 				t.Errorf(spew.Sprintf("\nexpected %#v\nactual   %#v", d.expected, actual))
 			}
 		}
+	}
+}
+
+func TestProduceJqFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		expectJq    string
+		expectRaw   bool
+		expectError bool
+	}{
+		{
+			name:        "no jq flags",
+			args:        []string{"-topic", "test"},
+			expectJq:    "",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "jq flag only",
+			args:        []string{"-topic", "test", "-jq", ".startOffset"},
+			expectJq:    ".startOffset",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "raw flag only",
+			args:        []string{"-topic", "test", "-raw"},
+			expectJq:    "",
+			expectRaw:   true,
+			expectError: false,
+		},
+		{
+			name:        "both jq and raw flags",
+			args:        []string{"-topic", "test", "-jq", ".partition", "-raw"},
+			expectJq:    ".partition",
+			expectRaw:   true,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &produceCmd{}
+			cmd.parseArgs(tt.args)
+			if cmd.jq != tt.expectJq {
+				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.jq)
+			}
+			if cmd.raw != tt.expectRaw {
+				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.raw)
+			}
+		})
 	}
 }

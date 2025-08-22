@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	json "github.com/goccy/go-json"
 	"io"
 	"math/rand"
 	"os"
@@ -16,8 +15,11 @@ import (
 	"time"
 	"unicode/utf16"
 
+	json "github.com/goccy/go-json"
+
 	"github.com/IBM/sarama"
-	"golang.org/x/crypto/ssh/terminal"
+	"github.com/itchyny/gojq"
+	"golang.org/x/term"
 )
 
 const (
@@ -35,7 +37,7 @@ func init() {
 }
 
 func setupOutputBuffering() {
-	if terminal.IsTerminal(int(os.Stdout.Fd())) {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
 		stdoutWriter = os.Stdout
 	} else {
 		bufferedWriter = bufio.NewWriter(os.Stdout)
@@ -116,6 +118,21 @@ type command interface {
 
 type baseCmd struct {
 	verbose bool
+	jq      string
+	raw     bool
+	jqQuery *gojq.Query
+}
+
+func (b *baseCmd) prepare() error {
+	var err error
+	if b.jq == "" {
+		b.jqQuery = nil
+		return nil
+	}
+	if b.jqQuery, err = gojq.Parse(b.jq); err != nil {
+		return fmt.Errorf("failed to parse jq query %q: %v", b.jq, err)
+	}
+	return nil
 }
 
 func (b *baseCmd) infof(msg string, args ...interface{}) {
@@ -150,30 +167,103 @@ func chooseKafkaVersion(arg, env string) (sarama.KafkaVersion, error) {
 }
 
 type printContext struct {
-	output interface{}
+	output object
 	done   chan struct{}
+	cmd    baseCmd
 }
 
 func print(in <-chan printContext, pretty bool) {
-	var (
-		buf     []byte
-		err     error
-		marshal = json.Marshal
-	)
-
-	if pretty && terminal.IsTerminal(int(syscall.Stdout)) {
+	marshal := json.Marshal
+	if pretty && term.IsTerminal(int(syscall.Stdout)) {
 		marshal = func(i interface{}) ([]byte, error) { return json.MarshalIndent(i, "", "  ") }
 	}
-
 	for {
 		ctx := <-in
-		if buf, err = marshal(ctx.output); err != nil {
-			failf("failed to marshal output %#v, err=%v", ctx.output, err)
-		}
 
-		stdoutWriter.Write(buf)
-		stdoutWriter.Write([]byte{'\n'})
+		// Apply jq filter if specified
+		if q := ctx.cmd.jqQuery; q != nil {
+			if output, multi, err := applyJqFilter(q, ctx.output); err != nil {
+				warnf("failed to apply jq filter: %v\n", err)
+				return
+			} else if multi {
+				for _, item := range output.([]any) {
+					printOutput(item, marshal, ctx.cmd.raw)
+				}
+			} else {
+				printOutput(output, marshal, ctx.cmd.raw)
+			}
+		} else {
+			printOutput(ctx.output, marshal, ctx.cmd.raw)
+		}
 		close(ctx.done)
+	}
+}
+
+func printOutput(output any, marshal func(any) ([]byte, error), raw bool) {
+	if raw {
+		switch output := output.(type) {
+		case []byte:
+			stdoutWriter.Write(output)
+			stdoutWriter.Write([]byte{'\n'})
+			return
+		case string:
+			io.WriteString(stdoutWriter, output)
+			io.WriteString(stdoutWriter, "\n")
+			return
+		case *string:
+			io.WriteString(stdoutWriter, *output)
+			io.WriteString(stdoutWriter, "\n")
+			return
+		}
+	}
+	// Normal JSON output
+	buf, err := marshal(output)
+	if err != nil {
+		failf("failed to marshal output %#v, err=%v", output, err)
+	}
+	stdoutWriter.Write(buf)
+	stdoutWriter.Write([]byte{'\n'})
+}
+
+type object interface {
+	ToMap() map[string]any
+}
+
+type mapObject map[string]any
+
+func (o mapObject) ToMap() map[string]any {
+	return map[string]any(o)
+}
+
+// ptrToValue converts a pointer to its value if not nil, otherwise returns nil
+func ptrToValue[T any](ptr *T) any {
+	if ptr != nil {
+		return *ptr
+	}
+	return nil
+}
+
+// Apply the filter using the cached compiled query
+func applyJqFilter(q *gojq.Query, input object) (any, bool, error) {
+	iter := q.Run(input.ToMap())
+	var results []any
+	for {
+		v, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if err, ok := v.(error); ok {
+			return nil, false, fmt.Errorf("jq execution error: %v", err)
+		}
+		results = append(results, v)
+	}
+	switch len(results) {
+	case 0:
+		return nil, false, nil // No results found
+	case 1:
+		return results[0], false, nil // Single result
+	default:
+		return results, true, nil // Multiple results, return as slice
 	}
 }
 

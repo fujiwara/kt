@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	json "github.com/goccy/go-json"
+
 	"github.com/IBM/sarama"
 )
 
@@ -1078,3 +1080,131 @@ func (s *tConsumerGroupSession) ResetOffset(topic string, partition int32, offse
 func (s *tConsumerGroupSession) MarkMessage(msg *sarama.ConsumerMessage, metadata string) {}
 func (s *tConsumerGroupSession) Context() context.Context                                 { return s.ctx }
 func (s *tConsumerGroupSession) Commit()                                                  {}
+
+func TestConsumeJqFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		expectJq    string
+		expectRaw   bool
+		expectError bool
+	}{
+		{
+			name:        "no jq flags",
+			args:        []string{"-topic", "test"},
+			expectJq:    "",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "jq flag only",
+			args:        []string{"-topic", "test", "-jq", ".value"},
+			expectJq:    ".value",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "raw flag only",
+			args:        []string{"-topic", "test", "-raw"},
+			expectJq:    "",
+			expectRaw:   true,
+			expectError: false,
+		},
+		{
+			name:        "both jq and raw flags",
+			args:        []string{"-topic", "test", "-jq", ".name", "-raw"},
+			expectJq:    ".name",
+			expectRaw:   true,
+			expectError: false,
+		},
+		{
+			name:        "complex jq expression",
+			args:        []string{"-topic", "test", "-jq", ".value | fromjson | .user_id"},
+			expectJq:    ".value | fromjson | .user_id",
+			expectRaw:   false,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &consumeCmd{}
+			cmd.parseArgs(tt.args)
+			if cmd.jq != tt.expectJq {
+				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.jq)
+			}
+			if cmd.raw != tt.expectRaw {
+				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.raw)
+			}
+		})
+	}
+}
+
+func TestConsumedMessageToMap(t *testing.T) {
+	timestamp := time.Date(2023, 12, 1, 15, 0, 0, 0, time.UTC)
+	key := "test-key"
+	value := "test-value"
+
+	msg := consumedMessage{
+		Partition: 0,
+		Offset:    42,
+		Key:       &key,
+		Value:     &value,
+		Timestamp: &timestamp,
+	}
+
+	result := msg.ToMap()
+	expected := map[string]any{
+		"partition": int32(0),
+		"offset":    int64(42),
+		"key":       "test-key",
+		"value":     "test-value",
+		"timestamp": "2023-12-01T15:00:00Z",
+	}
+
+	// Compare as JSON to ensure equivalence regardless of Go object structure
+	expectedJSON, err := json.Marshal(expected)
+	if err != nil {
+		t.Fatalf("failed to marshal expected: %v", err)
+	}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("failed to marshal result: %v", err)
+	}
+
+	if string(expectedJSON) != string(resultJSON) {
+		t.Errorf("JSON mismatch:\nexpected: %s\nactual:   %s", expectedJSON, resultJSON)
+	}
+}
+
+func TestConsumedMessageToMapWithNils(t *testing.T) {
+	msg := consumedMessage{
+		Partition: 1,
+		Offset:    100,
+		Key:       nil,
+		Value:     nil,
+		Timestamp: nil,
+	}
+
+	result := msg.ToMap()
+	expected := map[string]any{
+		"partition": int32(1),
+		"offset":    int64(100),
+		"key":       nil,
+		"value":     nil,
+	}
+
+	// Compare as JSON to ensure equivalence regardless of Go object structure
+	expectedJSON, err := json.Marshal(expected)
+	if err != nil {
+		t.Fatalf("failed to marshal expected: %v", err)
+	}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("failed to marshal result: %v", err)
+	}
+
+	if string(expectedJSON) != string(resultJSON) {
+		t.Errorf("JSON mismatch:\nexpected: %s\nactual:   %s", expectedJSON, resultJSON)
+	}
+}
