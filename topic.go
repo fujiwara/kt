@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/user"
@@ -81,10 +82,11 @@ func (p partition) ToMap() map[string]any {
 	return m
 }
 
-func (cmd *topicCmd) prepare() {
+func (cmd *topicCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
+	return nil
 }
 
 func (cmd *topicCmd) connect() {
@@ -122,7 +124,9 @@ func (cmd *topicCmd) run() {
 		all []string
 		out = make(chan printContext)
 	)
-	cmd.prepare()
+	if err = cmd.prepare(); err != nil {
+		failf("%v", err)
+	}
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}

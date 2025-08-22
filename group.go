@@ -78,7 +78,9 @@ const (
 func (cmd *groupCmd) run() {
 	var err error
 
-	cmd.prepare()
+	if err = cmd.prepare(); err != nil {
+		failf("%v", err)
+	}
 
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -349,9 +351,9 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	return cfg
 }
 
-func (cmd *groupCmd) prepare() {
+func (cmd *groupCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
 	switch cmd.Partitions {
 	case "", "all":
@@ -361,20 +363,20 @@ func (cmd *groupCmd) prepare() {
 		for _, ps := range pss {
 			p, err := strconv.ParseInt(ps, 10, 32)
 			if err != nil {
-				failf("partition id invalid err=%v", err)
+				return fmt.Errorf("partition id invalid err=%v", err)
 			}
 			cmd.partitions = append(cmd.partitions, int32(p))
 		}
 	}
 
 	if cmd.partitions == nil {
-		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, cmd.Partitions)
+		return fmt.Errorf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all"`, cmd.Partitions)
 	}
 
 	cmd.brokers = cmd.addDefaultPorts(cmd.Brokers)
 
 	if cmd.Reset != "" && (cmd.Topic == "" || cmd.Group == "") {
-		failf("group and topic are required to reset offsets.")
+		return fmt.Errorf("group and topic are required to reset offsets")
 	}
 
 	cmd.resetTime = false
@@ -401,7 +403,8 @@ func (cmd *groupCmd) prepare() {
 		}
 		if err != nil {
 			warnf("failed to parse set %#v err=%v", cmd.Reset, err)
-			failf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h). `, cmd.Reset)
+			return fmt.Errorf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h)`, cmd.Reset)
 		}
 	}
+	return nil
 }

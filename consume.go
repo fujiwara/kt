@@ -227,21 +227,21 @@ type interval struct {
 	end   offset
 }
 
-func (cmd *consumeCmd) prepare() {
+func (cmd *consumeCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
 
 	var err error
 	cmd.version, err = chooseKafkaVersion(cmd.ProtocolVersion, os.Getenv(ENV_KAFKA_VERSION))
 	if err != nil {
-		failf("failed to read kafka version err=%v", err)
+		return fmt.Errorf("failed to read kafka version err=%v", err)
 	}
 
 	if cmd.Until != "" {
 		cmd.until, err = parseUntilTime(cmd.Until)
 		if err != nil {
-			failf("failed to parse until time: %v", err)
+			return fmt.Errorf("failed to parse until time: %v", err)
 		}
 	}
 
@@ -249,8 +249,9 @@ func (cmd *consumeCmd) prepare() {
 
 	cmd.offsets, err = parseOffsets(cmd.Offsets)
 	if err != nil {
-		failf("%s", err)
+		return fmt.Errorf("%s", err)
 	}
+	return nil
 }
 
 // parseOffsets parses a set of partition-offset specifiers in the following
@@ -537,7 +538,9 @@ func (cmd *consumeCmd) setupClient() {
 }
 
 func (cmd *consumeCmd) run() {
-	cmd.prepare()
+	if err := cmd.prepare(); err != nil {
+		failf("%v", err)
+	}
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}

@@ -1,11 +1,13 @@
 package main
 
 import (
-	json "github.com/goccy/go-json"
+	"fmt"
 	"log"
 	"os"
 	"os/user"
 	"time"
+
+	json "github.com/goccy/go-json"
 
 	"github.com/IBM/sarama"
 )
@@ -26,9 +28,9 @@ type adminCmd struct {
 	admin       sarama.ClusterAdmin
 }
 
-func (cmd *adminCmd) prepare() {
+func (cmd *adminCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
 
 	if cmd.Timeout > 0 {
@@ -40,21 +42,24 @@ func (cmd *adminCmd) prepare() {
 	if cmd.CreateTopic != "" {
 		buf, err := os.ReadFile(cmd.TopicDetail)
 		if err != nil {
-			failf("failed to read topic detail err=%v", err)
+			return fmt.Errorf("failed to read topic detail err=%v", err)
 		}
 
 		var detail sarama.TopicDetail
 		if err = json.Unmarshal(buf, &detail); err != nil {
-			failf("failed to unmarshal topic detail err=%v", err)
+			return fmt.Errorf("failed to unmarshal topic detail err=%v", err)
 		}
 		cmd.topicDetail = &detail
 	}
+	return nil
 }
 
 func (cmd *adminCmd) run() {
 	var err error
 
-	cmd.prepare()
+	if err = cmd.prepare(); err != nil {
+		failf("%v", err)
+	}
 
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)

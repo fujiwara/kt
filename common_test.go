@@ -672,7 +672,10 @@ func TestBaseCmdJqFlags(t *testing.T) {
 			cmd := &baseCmd{}
 			cmd.Jq = tt.jq
 			cmd.Raw = tt.raw
-			cmd.prepare()
+			if err := cmd.prepare(); err != nil {
+				t.Errorf("Failed to prepare: %v", err)
+				return
+			}
 			if cmd.Jq != tt.expectJq {
 				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.Jq)
 			}

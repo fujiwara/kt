@@ -6,7 +6,6 @@ import (
 	json "github.com/goccy/go-json"
 )
 
-
 func TestGroupToMap(t *testing.T) {
 	offset1 := int64(100)
 	lag1 := int64(10)

@@ -777,7 +777,10 @@ func TestConsumeParseArgs(t *testing.T) {
 	target.Brokers = []string{givenBroker}
 	target.EncodeValue = "string"
 	target.EncodeKey = "string"
-	target.prepare()
+	if err := target.prepare(); err != nil {
+		t.Errorf("Failed to prepare: %v", err)
+		return
+	}
 	if target.Topic != expectedTopic ||
 		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf("Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
@@ -798,7 +801,10 @@ func TestConsumeParseArgs(t *testing.T) {
 	target.Brokers = expectedBrokers
 	target.EncodeValue = "string"
 	target.EncodeKey = "string"
-	target.prepare()
+	if err := target.prepare(); err != nil {
+		t.Errorf("Failed to prepare: %v", err)
+		return
+	}
 	if target.Topic != expectedTopic ||
 		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf("Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
@@ -819,7 +825,10 @@ func TestConsumeParseArgs(t *testing.T) {
 	target.Brokers = expectedBrokers
 	target.EncodeValue = "string"
 	target.EncodeKey = "string"
-	target.prepare()
+	if err := target.prepare(); err != nil {
+		t.Errorf("Failed to prepare: %v", err)
+		return
+	}
 	if target.Topic != expectedTopic ||
 		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf("Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
@@ -1107,7 +1116,6 @@ func (s *tConsumerGroupSession) ResetOffset(topic string, partition int32, offse
 func (s *tConsumerGroupSession) MarkMessage(msg *sarama.ConsumerMessage, metadata string) {}
 func (s *tConsumerGroupSession) Context() context.Context                                 { return s.ctx }
 func (s *tConsumerGroupSession) Commit()                                                  {}
-
 
 func TestConsumedMessageToMap(t *testing.T) {
 	timestamp := time.Date(2023, 12, 1, 15, 0, 0, 0, time.UTC)

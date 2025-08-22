@@ -113,7 +113,6 @@ const (
 
 var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
-
 type baseCmd struct {
 	Pretty          bool     `help:"Control output pretty printing." default:"true" negatable:""`
 	Verbose         bool     `help:"More verbose logging to stderr."`

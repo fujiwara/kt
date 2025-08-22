@@ -21,28 +21,32 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func (cmd *produceCmd) prepare() {
+func (cmd *produceCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
 
-	cmd.compression = kafkaCompression(cmd.Compression)
+	var err error
+	cmd.compression, err = kafkaCompression(cmd.Compression)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func kafkaCompression(codecName string) sarama.CompressionCodec {
+func kafkaCompression(codecName string) (sarama.CompressionCodec, error) {
 	switch codecName {
 	case "gzip":
-		return sarama.CompressionGZIP
+		return sarama.CompressionGZIP, nil
 	case "snappy":
-		return sarama.CompressionSnappy
+		return sarama.CompressionSnappy, nil
 	case "lz4":
-		return sarama.CompressionLZ4
+		return sarama.CompressionLZ4, nil
 	case "":
-		return sarama.CompressionNone
+		return sarama.CompressionNone, nil
 	}
 
-	failf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
-	panic("unreachable")
+	return sarama.CompressionNone, fmt.Errorf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
 }
 
 func (cmd *produceCmd) findLeaders() {
@@ -139,7 +143,9 @@ type produceCmd struct {
 }
 
 func (cmd *produceCmd) run() {
-	cmd.prepare()
+	if err := cmd.prepare(); err != nil {
+		failf("%v", err)
+	}
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}

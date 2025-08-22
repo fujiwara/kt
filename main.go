@@ -74,4 +74,3 @@ func parseKong(args []string) (string, *CLI, error) {
 	}
 	return strings.Fields(kongCtx.Command())[0], &cli, nil
 }
-
