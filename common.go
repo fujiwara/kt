@@ -118,14 +118,17 @@ type command interface {
 }
 
 type baseCmd struct {
-	Pretty          bool   `help:"Control output pretty printing." default:"true" negatable:""`
-	Verbose         bool   `help:"More verbose logging to stderr."`
-	Jq              string `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
-	Raw             bool   `help:"Output raw strings without JSON encoding (like jq -r)."`
-	ProtocolVersion string `help:"Kafka protocol version" env:"KT_KAFKA_VERSION"`
+	Pretty          bool     `help:"Control output pretty printing." default:"true" negatable:""`
+	Verbose         bool     `help:"More verbose logging to stderr."`
+	Jq              string   `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
+	Raw             bool     `help:"Output raw strings without JSON encoding (like jq -r)."`
+	ProtocolVersion string   `help:"Kafka protocol version" env:"KT_KAFKA_VERSION"`
+	Brokers         []string `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
+	Auth            string   `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
 
 	jqQuery *gojq.Query
 	version sarama.KafkaVersion
+	auth    authConfig
 }
 
 func (b *baseCmd) prepare() error {
@@ -143,6 +146,9 @@ func (b *baseCmd) prepare() error {
 	if err != nil {
 		return fmt.Errorf("failed to read kafka version: %v", err)
 	}
+
+	// Read auth configuration
+	readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth)
 
 	return nil
 }

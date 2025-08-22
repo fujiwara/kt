@@ -18,17 +18,14 @@ import (
 type groupCmd struct {
 	baseCmd
 
-	Topic        string `help:"Topic to consume." env:"KT_TOPIC"`
-	Brokers      string `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
-	Auth         string `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
-	Group        string `help:"Consumer group name."`
+	Topic        string         `help:"Topic to consume." env:"KT_TOPIC"`
+	Group        string         `help:"Consumer group name."`
 	FilterGroups *regexp.Regexp `help:"Regex to filter groups."`
 	FilterTopics *regexp.Regexp `help:"Regex to filter topics."`
-	Reset        string `help:"Target offset to reset for consumer group (\"newest\", \"oldest\", a time, or specific offset)"`
-	Partitions   string `help:"Comma separated list of partitions to limit offsets to, or all" default:"all"`
-	Offsets      bool   `help:"Controls if offsets should be fetched" default:"true"`
+	Reset        string         `help:"Target offset to reset for consumer group (\"newest\", \"oldest\", a time, or specific offset)"`
+	Partitions   string         `help:"Comma separated list of partitions to limit offsets to, or all" default:"all"`
+	Offsets      bool           `help:"Controls if offsets should be fetched" default:"true"`
 
-	auth       authConfig
 	brokers    []string
 	partitions []int32
 	reset      int64
@@ -345,7 +342,7 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
-	if err = setupAuth(cmd.auth, cfg); err != nil {
+	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
 	}
 
@@ -358,8 +355,6 @@ func (cmd *groupCmd) failStartup(msg string) {
 }
 
 func (cmd *groupCmd) prepare() {
-	readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth)
-
 	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
@@ -381,7 +376,7 @@ func (cmd *groupCmd) prepare() {
 		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, cmd.Partitions)
 	}
 
-	cmd.brokers = cmd.addDefaultPorts(strings.Split(cmd.Brokers, ","))
+	cmd.brokers = cmd.addDefaultPorts(cmd.Brokers)
 
 	if cmd.Reset != "" && (cmd.Topic == "" || cmd.Group == "") {
 		failf("group and topic are required to reset offsets.")
@@ -415,4 +410,3 @@ func (cmd *groupCmd) prepare() {
 		}
 	}
 }
-

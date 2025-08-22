@@ -10,33 +10,15 @@ import (
 	"github.com/IBM/sarama"
 )
 
-type topicArgs struct {
-	brokers    string
-	auth       string
-	filter     string
-	partitions bool
-	leaders    bool
-	replicas   bool
-	config     bool
-	verbose    bool
-	pretty     bool
-	version    string
-	jq         string
-	raw        bool
-}
-
 type topicCmd struct {
 	baseCmd
 
-	Brokers    []string       `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
-	Auth       string         `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
 	Filter     *regexp.Regexp `help:"Regex to filter topics by name."`
 	Partitions bool           `help:"Include information per partition."`
 	Leaders    bool           `help:"Include leader information per partition."`
 	Replicas   bool           `help:"Include replica ids per partition."`
 	Config     bool           `help:"Include topic configuration."`
 
-	auth   authConfig
 	client sarama.Client
 	admin  sarama.ClusterAdmin
 }
@@ -100,8 +82,6 @@ func (p partition) ToMap() map[string]any {
 }
 
 func (cmd *topicCmd) prepare() {
-	readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth) // TODO: remove os.Getenv
-
 	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
@@ -122,7 +102,7 @@ func (cmd *topicCmd) connect() {
 	cfg.ClientID = "kt-topic-" + sanitizeUsername(usr.Username)
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
-	if err = setupAuth(cmd.auth, cfg); err != nil {
+	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
 	}
 

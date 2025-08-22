@@ -13,8 +13,6 @@ import (
 type adminCmd struct {
 	baseCmd
 
-	Brokers []string      `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
-	Auth    string        `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
 	Timeout time.Duration `help:"Timeout for request to Kafka" default:"3s"`
 
 	CreateTopic  string `help:"Name of the topic that should be created."`
@@ -24,21 +22,15 @@ type adminCmd struct {
 
 	brokers     []string
 	timeout     *time.Duration
-	auth        authConfig
 	topicDetail *sarama.TopicDetail
 	admin       sarama.ClusterAdmin
 }
 
 func (cmd *adminCmd) prepare() {
-	readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth)
-
 	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
 
-	// Kafka version is now handled by baseCmd.prepare()
-
-	// Use the timeout from command line args (kong handles parsing automatically)
 	if cmd.Timeout > 0 {
 		cmd.timeout = &cmd.Timeout
 	}
@@ -113,7 +105,7 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 		cfg.Admin.Timeout = *cmd.timeout
 	}
 
-	if err = setupAuth(cmd.auth, cfg); err != nil {
+	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
 	}
 
