@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	json "github.com/goccy/go-json"
 	"os"
@@ -20,6 +21,17 @@ import (
 
 type cmd struct {
 	in string
+}
+
+func randomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		randomBytes := make([]byte, 1)
+		rand.Read(randomBytes)
+		b[i] = charset[randomBytes[0]%byte(len(charset))]
+	}
+	return string(b)
 }
 
 func newCmd() *cmd                  { return &cmd{} }
