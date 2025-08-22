@@ -1,5 +1,8 @@
 # Changelog
 
+## [v14.2.0](https://github.com/fujiwara/kt/compare/v14.1.0...v14.2.0) - 2025-08-22
+- Add jq filtering support with -jq and -raw flags by @fujiwara in https://github.com/fujiwara/kt/pull/20
+
 ## [v14.1.0](https://github.com/fujiwara/kt/compare/v14.0.3...v14.1.0) - 2025-08-16
 - switch to goccy/go-json by @fujiwara in https://github.com/fujiwara/kt/pull/13
 - Add adaptive output buffering by @fujiwara in https://github.com/fujiwara/kt/pull/15
