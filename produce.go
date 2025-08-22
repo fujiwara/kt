@@ -142,7 +142,7 @@ type produceCmd struct {
 	baseCmd
 
 	Topic       string        `help:"Topic to produce to." env:"KT_TOPIC"`
-	Partition   int32         `help:"Partition to produce to" default:"-1"`
+	Partition   int32         `help:"Partition to produce to" default:"0"`
 	Batch       int           `help:"Batch size" default:"1"`
 	Timeout     time.Duration `help:"Timeout for request to Kafka" default:"5s"`
 	Quiet       bool          `help:"Don't output messages during processing"`
