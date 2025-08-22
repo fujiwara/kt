@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -317,10 +316,6 @@ func quietPrint(in <-chan printContext) {
 	}
 }
 
-func quitf(msg string, args ...interface{}) {
-	exitf(0, msg, args...)
-}
-
 func failf(msg string, args ...interface{}) {
 	exitf(1, msg, args...)
 }
@@ -380,49 +375,6 @@ func sanitizeUsername(u string) string {
 	return invalidClientIDCharactersRegExp.ReplaceAllString(u, "")
 }
 
-func randomString(length int) string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	buf := make([]byte, length)
-	r.Read(buf)
-	return fmt.Sprintf("%x", buf)[:length]
-}
-
-// setupCerts takes the paths to a tls certificate, CA, and certificate key in
-// a PEM format and returns a constructed tls.Config object.
-func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
-	if certPath == "" && caPath == "" && keyPath == "" {
-		return nil, nil
-	}
-
-	if certPath == "" || caPath == "" || keyPath == "" {
-		err := fmt.Errorf("certificate, CA and key path are required - got cert=%#v ca=%#v key=%#v", certPath, caPath, keyPath)
-		return nil, err
-	}
-
-	caString, err := os.ReadFile(caPath)
-	if err != nil {
-		return nil, err
-	}
-
-	caPool := x509.NewCertPool()
-	ok := caPool.AppendCertsFromPEM(caString)
-	if !ok {
-		return nil, fmt.Errorf("unable to add ca at %s to certificate pool", caPath)
-	}
-
-	clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, err
-	}
-
-	bundle := &tls.Config{
-		RootCAs:      caPool,
-		Certificates: []tls.Certificate{clientCert},
-	}
-	bundle.BuildNameToCertificate()
-	return bundle, nil
-}
-
 type authConfig struct {
 	Mode              string `json:"mode"`
 	CACert            string `json:"ca-certificate"`
@@ -445,7 +397,7 @@ func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
 	case "SASL":
 		return setupSASL(auth, saramaCfg)
 	default:
-		return fmt.Errorf("unsupport auth mode: %#v", auth.Mode)
+		return fmt.Errorf("unsupported auth mode: %#v", auth.Mode)
 	}
 }
 
@@ -528,12 +480,12 @@ func readAuthFile(argFN string, envFN string, target *authConfig) error {
 		fn = envFN
 	}
 
-	byts, err := os.ReadFile(fn)
+	b, err := os.ReadFile(fn)
 	if err != nil {
 		return fmt.Errorf("failed to read auth file err=%v", err)
 	}
 
-	if err := json.Unmarshal(byts, target); err != nil {
+	if err := json.Unmarshal(b, target); err != nil {
 		return fmt.Errorf("failed to unmarshal auth file err=%v", err)
 	}
 
