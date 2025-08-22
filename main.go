@@ -79,6 +79,8 @@ func main() {
 	switch sub {
 	case "topic":
 		cli.Topic.run()
+	case "admin":
+		cli.Admin.run()
 	default:
 		mainLegacy(os.Args)
 	}
@@ -113,7 +115,8 @@ func mainLegacy(args []string) {
 	case "group":
 		cmd = &groupCmd{}
 	case "admin":
-		cmd = &adminCmd{}
+		// cmd = &adminCmd{}
+		failf("admin command is now handled by Kong")
 	case "-h", "-help", "--help":
 		quitf(usageMessage)
 	case "-version", "--version":

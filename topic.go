@@ -28,19 +28,17 @@ type topicArgs struct {
 type topicCmd struct {
 	baseCmd
 
-	Brokers         []string       `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
-	Auth            string         `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
-	Filter          *regexp.Regexp `help:"Regex to filter topics by name."`
-	Partitions      bool           `help:"Include information per partition."`
-	Leaders         bool           `help:"Include leader information per partition."`
-	Replicas        bool           `help:"Include replica ids per partition."`
-	Config          bool           `help:"Include topic configuration."`
-	ProtocolVersion string         `help:"Kafka protocol version" env:"KT_KAFKA_VERSION"`
+	Brokers    []string       `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
+	Auth       string         `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
+	Filter     *regexp.Regexp `help:"Regex to filter topics by name."`
+	Partitions bool           `help:"Include information per partition."`
+	Leaders    bool           `help:"Include leader information per partition."`
+	Replicas   bool           `help:"Include replica ids per partition."`
+	Config     bool           `help:"Include topic configuration."`
 
-	version sarama.KafkaVersion
-	auth    authConfig
-	client  sarama.Client
-	admin   sarama.ClusterAdmin
+	auth   authConfig
+	client sarama.Client
+	admin  sarama.ClusterAdmin
 }
 
 type topic struct {
@@ -108,11 +106,7 @@ func (cmd *topicCmd) prepare() {
 		failf("failed to prepare jq query err=%v", err)
 	}
 
-	var err error
-	cmd.version, err = chooseKafkaVersion(cmd.ProtocolVersion)
-	if err != nil {
-		failf("failed to read kafka version err=%v", err)
-	}
+	// Kafka version is now handled by baseCmd.prepare()
 }
 
 func (cmd *topicCmd) connect() {
@@ -122,7 +116,7 @@ func (cmd *topicCmd) connect() {
 		cfg = sarama.NewConfig()
 	)
 
-	cfg.Version = cmd.version
+	cfg.Version = cmd.getKafkaVersion()
 
 	if usr, err = user.Current(); err != nil {
 		cmd.infof("Failed to read current user err=%v", err)
@@ -134,10 +128,13 @@ func (cmd *topicCmd) connect() {
 		failf("failed to setup auth err=%v", err)
 	}
 
-	if cmd.client, err = sarama.NewClient(cmd.Brokers, cfg); err != nil {
+	// Add default port if not specified using common method
+	brokers := cmd.addDefaultPorts(cmd.Brokers)
+
+	if cmd.client, err = sarama.NewClient(brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
 	}
-	if cmd.admin, err = sarama.NewClusterAdmin(cmd.Brokers, cfg); err != nil {
+	if cmd.admin, err = sarama.NewClusterAdmin(brokers, cfg); err != nil {
 		failf("failed to create cluster admin err=%v", err)
 	}
 }

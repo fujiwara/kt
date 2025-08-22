@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -117,23 +118,32 @@ type command interface {
 }
 
 type baseCmd struct {
-	Pretty  bool   `help:"Control output pretty printing." default:"true" negatable:""`
-	Verbose bool   `help:"More verbose logging to stderr."`
-	Jq      string `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
-	Raw     bool   `help:"Output raw strings without JSON encoding (like jq -r)."`
+	Pretty          bool   `help:"Control output pretty printing." default:"true" negatable:""`
+	Verbose         bool   `help:"More verbose logging to stderr."`
+	Jq              string `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
+	Raw             bool   `help:"Output raw strings without JSON encoding (like jq -r)."`
+	ProtocolVersion string `help:"Kafka protocol version" env:"KT_KAFKA_VERSION"`
 
 	jqQuery *gojq.Query
+	version sarama.KafkaVersion
 }
 
 func (b *baseCmd) prepare() error {
 	var err error
 	if b.Jq == "" {
 		b.jqQuery = nil
-		return nil
+	} else {
+		if b.jqQuery, err = gojq.Parse(b.Jq); err != nil {
+			return fmt.Errorf("failed to parse jq query %q: %v", b.Jq, err)
+		}
 	}
-	if b.jqQuery, err = gojq.Parse(b.Jq); err != nil {
-		return fmt.Errorf("failed to parse jq query %q: %v", b.Jq, err)
+
+	// Parse Kafka version
+	b.version, err = chooseKafkaVersion(b.ProtocolVersion)
+	if err != nil {
+		return fmt.Errorf("failed to read kafka version: %v", err)
 	}
+
 	return nil
 }
 
@@ -141,6 +151,27 @@ func (b *baseCmd) infof(msg string, args ...interface{}) {
 	if b.Verbose {
 		warnf(msg, args...)
 	}
+}
+
+// getKafkaVersion returns the parsed Kafka version
+func (b *baseCmd) getKafkaVersion() sarama.KafkaVersion {
+	return b.version
+}
+
+// addDefaultPorts adds default port 9092 to broker addresses if missing
+func (b *baseCmd) addDefaultPorts(brokers []string) []string {
+	result := make([]string, len(brokers))
+	for i, broker := range brokers {
+		host, port, err := net.SplitHostPort(broker)
+		if err != nil {
+			// No port specified, add default port
+			result[i] = net.JoinHostPort(broker, "9092")
+		} else {
+			// Port already specified, keep as is
+			result[i] = net.JoinHostPort(host, port)
+		}
+	}
+	return result
 }
 
 func warnf(msg string, args ...interface{}) {
