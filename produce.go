@@ -49,7 +49,7 @@ func kafkaCompression(codecName string) (sarama.CompressionCodec, error) {
 	return sarama.CompressionNone, fmt.Errorf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
 }
 
-func (cmd *produceCmd) findLeaders() {
+func (cmd *produceCmd) findLeaders() error {
 	var (
 		usr *user.User
 		err error
@@ -67,7 +67,7 @@ func (cmd *produceCmd) findLeaders() {
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
-		failf("failed to setup auth err=%v", err)
+		return fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
 loop:
@@ -103,24 +103,24 @@ loop:
 				for _, pm := range tm.Partitions {
 					b, ok := brokers[pm.Leader]
 					if !ok {
-						failf("failed to find leader in broker response, giving up")
+						return fmt.Errorf("failed to find leader in broker response, giving up")
 					}
 
 					if err = b.Open(cfg); err != nil && err != sarama.ErrAlreadyConnected {
-						failf("failed to open broker connection err=%s", err)
+						return fmt.Errorf("failed to open broker connection err=%s", err)
 					}
 					if connected, err := broker.Connected(); !connected && err != nil {
-						failf("failed to wait for broker connection to open err=%s", err)
+						return fmt.Errorf("failed to wait for broker connection to open err=%s", err)
 					}
 
 					cmd.leaders[pm.ID] = b
 				}
-				return
+				return nil
 			}
 		}
 	}
 
-	failf("failed to find leader for given topic")
+	return fmt.Errorf("failed to find leader for given topic")
 }
 
 type produceCmd struct {
@@ -151,7 +151,9 @@ func (cmd *produceCmd) run() error {
 	}
 
 	defer cmd.close()
-	cmd.findLeaders()
+	if err := cmd.findLeaders(); err != nil {
+		return err
+	}
 	stdin := make(chan string)
 	lines := make(chan string)
 	messages := make(chan message)

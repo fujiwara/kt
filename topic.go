@@ -89,7 +89,7 @@ func (cmd *topicCmd) prepare() error {
 	return nil
 }
 
-func (cmd *topicCmd) connect() {
+func (cmd *topicCmd) connect() error {
 	var (
 		err error
 		usr *user.User
@@ -105,17 +105,18 @@ func (cmd *topicCmd) connect() {
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
-		failf("failed to setup auth err=%v", err)
+		return fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
 	brokers := cmd.addDefaultPorts(cmd.Brokers)
 
 	if cmd.client, err = sarama.NewClient(brokers, cfg); err != nil {
-		failf("failed to create client err=%v", err)
+		return fmt.Errorf("failed to create client err=%v", err)
 	}
 	if cmd.admin, err = sarama.NewClusterAdmin(brokers, cfg); err != nil {
-		failf("failed to create cluster admin err=%v", err)
+		return fmt.Errorf("failed to create cluster admin err=%v", err)
 	}
+	return nil
 }
 
 func (cmd *topicCmd) run() error {
@@ -131,12 +132,14 @@ func (cmd *topicCmd) run() error {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	cmd.connect()
+	if err = cmd.connect(); err != nil {
+		return err
+	}
 	defer cmd.client.Close()
 	defer cmd.admin.Close()
 
 	if all, err = cmd.client.Topics(); err != nil {
-		failf("failed to read topics err=%v", err)
+		return fmt.Errorf("failed to read topics err=%v", err)
 	}
 
 	topics := []string{}
