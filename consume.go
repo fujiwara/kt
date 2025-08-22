@@ -230,7 +230,7 @@ type interval struct {
 
 func (cmd *consumeCmd) failStartup(msg string) {
 	warnf(msg)
-	failf("use \"kt consume -help\" for more information")
+	failf("use \"kt consume --help\" for more information")
 }
 
 func (cmd *consumeCmd) prepare() {

@@ -23,7 +23,7 @@ type message struct {
 
 func (cmd *produceCmd) failStartup(msg string) {
 	warnf(msg)
-	failf("use \"kt produce -help\" for more information")
+	failf("use \"kt produce --help\" for more information")
 }
 
 func (cmd *produceCmd) prepare() {

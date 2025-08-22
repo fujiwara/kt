@@ -90,7 +90,7 @@ func runSystemTest(t *testing.T, config testConfig) {
 	}
 
 	//
-	// kt admin -createtopic
+	// kt admin --create-topic
 	//
 	topicName := fmt.Sprintf("%s-%v", config.topicPrefix, randomString(6))
 	topicDetail := &sarama.TopicDetail{
@@ -107,8 +107,8 @@ func runSystemTest(t *testing.T, config testConfig) {
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "admin",
 		"--create-topic", topicName,
 		"--topic-detail", fnTopicDetail)
-	fmt.Printf(">> system test kt admin -createtopic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt admin -createtopic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt admin --create-topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt admin --create-topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Empty(t, stdErr)
 
@@ -126,8 +126,8 @@ func runSystemTest(t *testing.T, config testConfig) {
 	require.NoError(t, err)
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "produce",
 		"--topic", topicName)
-	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt produce --topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt produce --topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Empty(t, stdErr)
 
@@ -148,8 +148,8 @@ func runSystemTest(t *testing.T, config testConfig) {
 		"--timeout", "5s",
 		"--offsets", "all=oldest",
 		"--group", config.groupName)
-	fmt.Printf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt consume --topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt consume --topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 
 	lines := strings.Split(stdOut, "\n")
@@ -173,12 +173,12 @@ func runSystemTest(t *testing.T, config testConfig) {
 	}
 
 	//
-	// kt admin -deletetopic
+	// kt admin --delete-topic
 	//
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "admin",
 		"--delete-topic", topicName)
-	fmt.Printf(">> system test kt admin -deletetopic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt admin -deletetopic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt admin --delete-topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt admin --delete-topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Empty(t, stdErr)
 
@@ -198,8 +198,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 		"--topic", topicName,
 		"--timeout", "2s",
 		"--offsets", "all=oldest")
-	fmt.Printf(">> system test kt consume -topic %v (non-group) stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt consume -topic %v (non-group) stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt consume --topic %v (non-group) stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt consume --topic %v (non-group) stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 
 	lines := strings.Split(stdOut, "\n")
@@ -224,8 +224,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 	status, stdOut, stdErr = runMethod(newCmd(), "./kt", "group",
 		"--verbose",
 		"--topic", topicName)
-	fmt.Printf(">> system test kt group -verbose -topic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt group -verbose -topic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt group --verbose --topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group --verbose --topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
 	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"%s","topic":"%v","offsets":[{"partition":0,"offset":1,"lag":0}]}`, config.groupName, topicName))
@@ -246,8 +246,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 		"./kt", "produce",
 		"--topic", topicName,
 	)
-	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt produce --topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt produce --topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Empty(t, stdErr)
 
@@ -270,8 +270,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 		"--timeout", "5s",
 		"--group", config.groupName,
 	)
-	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt consume --topic %v --offsets all=resume stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt consume --topic %v --offsets all=resume stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 
 	lines = strings.Split(stdOut, "\n")
@@ -300,8 +300,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 		"--group", config.groupName,
 		"--reset", "0",
 	)
-	fmt.Printf(">> system test kt group -verbose -topic %v -partitions 0 -group %s -reset 0 stdout:\n%s\n", topicName, config.groupName, stdOut)
-	fmt.Printf(">> system test kt group -verbose -topic %v -partitions 0 -group %s -reset 0  stderr:\n%s\n", topicName, config.groupName, stdErr)
+	fmt.Printf(">> system test kt group --verbose --topic %v --partitions 0 --group %s --reset 0 stdout:\n%s\n", topicName, config.groupName, stdOut)
+	fmt.Printf(">> system test kt group --verbose --topic %v --partitions 0 --group %s --reset 0  stderr:\n%s\n", topicName, config.groupName, stdErr)
 	require.Zero(t, status)
 
 	lines = strings.Split(stdOut, "\n")
@@ -328,8 +328,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 		"--verbose",
 		"--topic", topicName,
 	)
-	fmt.Printf(">> system test kt group -verbose -topic %v stdout:\n%s\n", topicName, stdOut)
-	fmt.Printf(">> system test kt group -verbose -topic %v stderr:\n%s\n", topicName, stdErr)
+	fmt.Printf(">> system test kt group --verbose --topic %v stdout:\n%s\n", topicName, stdOut)
+	fmt.Printf(">> system test kt group --verbose --topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
 	require.Contains(t, stdErr, fmt.Sprintf("found partitions=[0] for topic=%v", topicName))
 	require.Contains(t, stdOut, fmt.Sprintf(`{"name":"%s","topic":"%v","offsets":[{"partition":0,"offset":0,"lag":2}]}`, config.groupName, topicName))

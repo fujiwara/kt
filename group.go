@@ -351,7 +351,7 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 
 func (cmd *groupCmd) failStartup(msg string) {
 	warnf(msg)
-	failf("use \"kt group -help\" for more information")
+	failf("use \"kt group --help\" for more information")
 }
 
 func (cmd *groupCmd) prepare() {
