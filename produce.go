@@ -4,39 +4,16 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"os/user"
-	"strings"
 	"time"
 
 	"github.com/IBM/sarama"
 	json "github.com/goccy/go-json"
 )
-
-type produceArgs struct {
-	topic       string
-	partition   int
-	brokers     string
-	auth        string
-	batch       int
-	timeout     time.Duration
-	verbose     bool
-	pretty      bool
-	quiet       bool
-	version     string
-	compression string
-	literal     bool
-	decodeKey   string
-	decodeValue string
-	partitioner string
-	bufferSize  int
-	jq          string
-	raw         bool
-}
 
 type message struct {
 	Key       *string `json:"key"`
@@ -44,113 +21,31 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func (cmd *produceCmd) read(as []string) produceArgs {
-	var args produceArgs
-	flags := flag.NewFlagSet("produce", flag.ContinueOnError)
-	flags.StringVar(&args.topic, "topic", "", "Topic to produce to (required).")
-	flags.IntVar(&args.partition, "partition", 0, "Partition to produce to (defaults to 0).")
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
-	flags.IntVar(&args.batch, "batch", 1, "Max size of a batch before sending it off")
-	flags.DurationVar(&args.timeout, "timeout", 50*time.Millisecond, "Duration to wait for batch to be filled before sending it off")
-	flags.BoolVar(&args.verbose, "verbose", false, "Verbose output")
-	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	flags.BoolVar(&args.quiet, "quiet", false, "Quiet output, only show errors")
-	flags.BoolVar(&args.literal, "literal", false, "Interpret stdin line literally and pass it as value, key as null.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.compression, "compression", "", "Kafka message compression codec [gzip|snappy|lz4] (defaults to none)")
-	flags.StringVar(&args.partitioner, "partitioner", "", "Optional partitioner to use. Available: hashCode, hashCodeByValue")
-	flags.StringVar(&args.decodeKey, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
-	flags.StringVar(&args.decodeValue, "decodevalue", "string", "Decode message value as (string|hex|base64), defaults to string.")
-	flags.IntVar(&args.bufferSize, "buffersize", 16777216, "Buffer size for scanning stdin, defaults to 16777216=16*1024*1024.")
-	flags.StringVar(&args.jq, "jq", "", "Apply jq filter to output (e.g., '.value | fromjson | .field').")
-	flags.BoolVar(&args.raw, "raw", false, "Output raw strings without JSON encoding (like jq -r).")
-
-	flags.Usage = func() {
-		warnf("Usage of produce:")
-		flags.PrintDefaults()
-		warnf(produceDocString + "\n")
-	}
-
-	err := flags.Parse(as)
-	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
-		os.Exit(0)
-	} else if err != nil {
-		os.Exit(2)
-	}
-
-	return args
-}
-
 func (cmd *produceCmd) failStartup(msg string) {
 	warnf(msg)
 	failf("use \"kt produce -help\" for more information")
 }
 
-func (cmd *produceCmd) parseArgs(as []string) {
-	args := cmd.read(as)
-	envTopic := os.Getenv(ENV_TOPIC)
-	if args.topic == "" {
-		if envTopic == "" {
-			cmd.failStartup("Topic name is required.")
-		} else {
-			args.topic = envTopic
-		}
-	}
-	cmd.topic = args.topic
-
-	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
-
-	envBrokers := os.Getenv(ENV_BROKERS)
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
-
-	cmd.brokers = strings.Split(args.brokers, ",")
-	for i, b := range cmd.brokers {
-		if !strings.Contains(b, ":") {
-			cmd.brokers[i] = b + ":9092"
-		}
-	}
-
-	if args.decodeValue != "string" && args.decodeValue != "hex" && args.decodeValue != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodevalue argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
-		return
-	}
-	cmd.decodeValue = args.decodeValue
-
-	if args.decodeKey != "string" && args.decodeKey != "hex" && args.decodeKey != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodekey argument %#v, only string, hex and base64 are supported.`, args.decodeValue))
-		return
-	}
-	cmd.decodeKey = args.decodeKey
-	cmd.batch = args.batch
-	cmd.timeout = args.timeout
-	cmd.Verbose = args.verbose
-	cmd.pretty = args.pretty
-	cmd.quiet = args.quiet
-	cmd.literal = args.literal
-	cmd.Jq = args.jq
-	cmd.Raw = args.raw
-	if err := cmd.prepare(); err != nil {
+func (cmd *produceCmd) prepare() {
+	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
 
-	cmd.partition = int32(args.partition)
-	cmd.partitioner = args.partitioner
-
-	var err error
-	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
-	if err != nil {
-		failf("failed to read kafka version err=%v", err)
+	if cmd.Topic == "" {
+		cmd.failStartup("Topic name is required.")
 	}
 
-	cmd.compression = kafkaCompression(args.compression)
-	cmd.bufferSize = args.bufferSize
+	if cmd.DecodeValue != "" && cmd.DecodeValue != "string" && cmd.DecodeValue != "hex" && cmd.DecodeValue != "base64" {
+		cmd.failStartup(fmt.Sprintf(`unsupported decodevalue argument %#v, only string, hex and base64 are supported.`, cmd.DecodeValue))
+		return
+	}
+
+	if cmd.DecodeKey != "" && cmd.DecodeKey != "string" && cmd.DecodeKey != "hex" && cmd.DecodeKey != "base64" {
+		cmd.failStartup(fmt.Sprintf(`unsupported decodekey argument %#v, only string, hex and base64 are supported.`, cmd.DecodeKey))
+		return
+	}
+
+	cmd.compression = kafkaCompression(cmd.Compression)
 }
 
 func kafkaCompression(codecName string) sarama.CompressionCodec {
@@ -174,24 +69,24 @@ func (cmd *produceCmd) findLeaders() {
 		usr *user.User
 		err error
 		res *sarama.MetadataResponse
-		req = sarama.MetadataRequest{Topics: []string{cmd.topic}}
+		req = sarama.MetadataRequest{Topics: []string{cmd.Topic}}
 		cfg = sarama.NewConfig()
 	)
 
 	cfg.Producer.RequiredAcks = sarama.WaitForAll
-	cfg.Version = cmd.version
+	cfg.Version = cmd.getKafkaVersion()
 	if usr, err = user.Current(); err != nil {
 		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-produce-" + sanitizeUsername(usr.Username)
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
-	if err = setupAuth(cmd.auth, cfg); err != nil {
+	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
 	}
 
 loop:
-	for _, addr := range cmd.brokers {
+	for _, addr := range cmd.addDefaultPorts(cmd.Brokers) {
 		broker := sarama.NewBroker(addr)
 		if err = broker.Open(cfg); err != nil {
 			cmd.infof("Failed to open broker connection to %v. err=%s\n", addr, err)
@@ -213,7 +108,7 @@ loop:
 		}
 
 		for _, tm := range res.Topics {
-			if tm.Name == cmd.topic {
+			if tm.Name == cmd.Topic {
 				if tm.Err != sarama.ErrNoError {
 					cmd.infof("Failed to get metadata from %#v. err=%v\n", addr, tm.Err)
 					continue loop
@@ -246,27 +141,24 @@ loop:
 type produceCmd struct {
 	baseCmd
 
-	topic       string
-	brokers     []string
-	auth        authConfig
-	batch       int
-	timeout     time.Duration
-	pretty      bool
-	quiet       bool
-	literal     bool
-	partition   int32
-	version     sarama.KafkaVersion
-	compression sarama.CompressionCodec
-	partitioner string
-	decodeKey   string
-	decodeValue string
-	bufferSize  int
+	Topic       string        `help:"Topic to produce to." env:"KT_TOPIC"`
+	Partition   int32         `help:"Partition to produce to" default:"-1"`
+	Batch       int           `help:"Batch size" default:"1"`
+	Timeout     time.Duration `help:"Timeout for request to Kafka" default:"5s"`
+	Quiet       bool          `help:"Don't output messages during processing"`
+	Literal     bool          `help:"Interpret stdin line literally and pass it as value, key as null"`
+	Compression string        `help:"Compression codec to use (none, gzip, snappy, lz4, zstd)" default:"none"`
+	Partitioner string        `help:"Partitioner to use (manual, random, hash)" default:"manual"`
+	DecodeKey   string        `help:"Decode message key (string, hex, base64)" default:"string"`
+	DecodeValue string        `help:"Decode message value (string, hex, base64)" default:"string"`
+	BufferSize  int           `help:"Buffer size for producer" default:"8192"`
 
-	leaders map[int32]*sarama.Broker
+	compression sarama.CompressionCodec
+	leaders     map[int32]*sarama.Broker
 }
 
-func (cmd *produceCmd) run(as []string) {
-	cmd.parseArgs(as)
+func (cmd *produceCmd) run() {
+	cmd.prepare()
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
@@ -278,14 +170,14 @@ func (cmd *produceCmd) run(as []string) {
 	messages := make(chan message)
 	batchedMessages := make(chan []message)
 	out := make(chan printContext)
-	if cmd.quiet {
+	if cmd.Quiet {
 		go quietPrint(out)
 	} else {
-		go print(out, cmd.pretty)
+		go print(out, cmd.Pretty)
 	}
 	q := make(chan struct{})
 
-	go cmd.readStdinLines(cmd.bufferSize, stdin)
+	go cmd.readStdinLines(cmd.BufferSize, stdin)
 	go cmd.listenForInterrupt(q)
 	go cmd.readInput(q, stdin, lines)
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
@@ -348,9 +240,9 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 			var msg message
 
 			switch {
-			case cmd.literal:
+			case cmd.Literal:
 				msg.Value = &l
-				msg.Partition = &cmd.partition
+				msg.Partition = &cmd.Partition
 			default:
 				if err := json.Unmarshal([]byte(l), &msg); err != nil {
 					cmd.infof("Failed to unmarshal input [%v], falling back to defaults. err=%v\n", l, err)
@@ -364,9 +256,9 @@ func (cmd *produceCmd) deserializeLines(in chan string, out chan message, partit
 
 			var part int32 = 0
 			if msg.Partition == nil {
-				if msg.Value != nil && cmd.partitioner == "hashCodeByValue" {
+				if msg.Value != nil && cmd.Partitioner == "hashCodeByValue" {
 					part = hashCodePartition(*msg.Value, partitionCount)
-				} else if msg.Key != nil && cmd.partitioner == "hashCode" {
+				} else if msg.Key != nil && cmd.Partitioner == "hashCode" {
 					part = hashCodePartition(*msg.Key, partitionCount)
 				}
 				msg.Partition = &part
@@ -395,10 +287,10 @@ func (cmd *produceCmd) batchRecords(in chan message, out chan []message) {
 			}
 
 			messages = append(messages, m)
-			if len(messages) > 0 && len(messages) >= cmd.batch {
+			if len(messages) > 0 && len(messages) >= cmd.Batch {
 				send()
 			}
-		case <-time.After(cmd.timeout):
+		case <-time.After(cmd.Timeout):
 			if len(messages) > 0 {
 				send()
 			}
@@ -418,7 +310,7 @@ func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 	)
 
 	if msg.Key != nil {
-		switch cmd.decodeKey {
+		switch cmd.DecodeKey {
 		case "hex":
 			if sm.Key, err = hex.DecodeString(*msg.Key); err != nil {
 				return sm, fmt.Errorf("failed to decode key as hex string, err=%v", err)
@@ -433,7 +325,7 @@ func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 	}
 
 	if msg.Value != nil {
-		switch cmd.decodeValue {
+		switch cmd.DecodeValue {
 		case "hex":
 			if sm.Value, err = hex.DecodeString(*msg.Value); err != nil {
 				return sm, fmt.Errorf("failed to decode value as hex string, err=%v", err)
@@ -472,7 +364,7 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 		if err != nil {
 			return err
 		}
-		req.AddMessage(cmd.topic, *msg.Partition, sm)
+		req.AddMessage(cmd.Topic, *msg.Partition, sm)
 	}
 
 	for broker, req := range requests {
@@ -545,54 +437,3 @@ func (cmd *produceCmd) readInput(q chan struct{}, stdin chan string, out chan st
 		}
 	}
 }
-
-var produceDocString = fmt.Sprintf(`
-The values for -topic and -brokers can also be set via environment variables %s and %s respectively.
-The values supplied on the command line win over environment variable values.
-
-Input is read from stdin and separated by newlines.
-
-If you want to use the -partitioner keep in mind that the hashCode
-implementation is not the default for Kafka's producer anymore.
-
-To specify the key, value and partition individually pass it as a JSON object
-like the following:
-
-    {"key": "id-23", "value": "message content", "partition": 0}
-
-In case the input line cannot be interpeted as a JSON object the key and value
-both default to the input line and partition to 0.
-
-If you don't want to specify key for single message, in other words, it doesn't matter that a message goes
-to a random paritition (with equal probability), you can set the flag '-partitioner' with 'hashCodeByValue'.
-That will tell kt to take the value of a message to calculate a hashcode deciding which paritition it will go to.
-This can be helpful when you just want there are many messages distributed in partitions of a topic, and don't
-care about what the content is. 
-
-Examples:
-
-Send a single message with a specific key:
-
-  $ echo '{"key": "id-23", "value": "ola", "partition": 0}' | kt produce -topic greetings
-  Sent message to partition 0 at offset 3.
-
-  $ kt consume -topic greetings -timeout 1s -offsets 0:3-
-  {"partition":0,"offset":3,"key":"id-23","message":"ola"}
-
-Send a single message without specified key:
-  $ echo 'no key specified message' | kt produce -topic greetings -partitioner hashCodeByValue
-  Sent message to a partition decided by your case
-  
-
-Keep reading input from stdin until interrupted (via ^C).
-
-  $ kt produce -topic greetings
-  hello.
-  Sent message to partition 0 at offset 4.
-  bonjour.
-  Sent message to partition 0 at offset 5.
-
-  $ kt consume -topic greetings -timeout 1s -offsets 0:4-
-  {"partition":0,"offset":4,"key":"hello.","message":"hello."}
-  {"partition":0,"offset":5,"key":"bonjour.","message":"bonjour."}
-`, ENV_TOPIC, ENV_BROKERS)

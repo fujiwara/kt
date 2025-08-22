@@ -83,6 +83,8 @@ func main() {
 		cli.Admin.run()
 	case "group":
 		cli.Group.run()
+	case "produce":
+		cli.Produce.run()
 	default:
 		mainLegacy(os.Args)
 	}
@@ -110,7 +112,8 @@ func mainLegacy(args []string) {
 	case "consume":
 		cmd = &consumeCmd{}
 	case "produce":
-		cmd = &produceCmd{}
+		// cmd = &produceCmd{}
+		failf("produce command is now handled by Kong")
 	case "topic":
 		// cmd = &topicCmd{}
 		failf("xxx")
