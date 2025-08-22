@@ -130,7 +130,10 @@ func TestProduceParseArgs(t *testing.T) {
 
 	target.Topic = expectedTopic
 	target.Brokers = []string{givenBroker}
-	target.prepare()
+	if err := target.prepare(); err != nil {
+		t.Errorf("Failed to prepare: %v", err)
+		return
+	}
 	if target.Topic != expectedTopic ||
 		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf(
@@ -150,7 +153,10 @@ func TestProduceParseArgs(t *testing.T) {
 
 	target.Topic = expectedTopic
 	target.Brokers = expectedBrokers
-	target.prepare()
+	if err := target.prepare(); err != nil {
+		t.Errorf("Failed to prepare: %v", err)
+		return
+	}
 	if target.Topic != expectedTopic ||
 		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf(
@@ -170,7 +176,10 @@ func TestProduceParseArgs(t *testing.T) {
 
 	target.Topic = expectedTopic
 	target.Brokers = expectedBrokers
-	target.prepare()
+	if err := target.prepare(); err != nil {
+		t.Errorf("Failed to prepare: %v", err)
+		return
+	}
 	if target.Topic != expectedTopic ||
 		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf(
@@ -307,4 +316,3 @@ func TestDeserializeLines(t *testing.T) {
 		}
 	}
 }
-

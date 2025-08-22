@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -113,7 +112,6 @@ const (
 
 var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
-
 type baseCmd struct {
 	Pretty          bool     `help:"Control output pretty printing." default:"true" negatable:""`
 	Verbose         bool     `help:"More verbose logging to stderr."`
@@ -145,7 +143,9 @@ func (b *baseCmd) prepare() error {
 	}
 
 	// Read auth configuration
-	readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth)
+	if err = readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -219,42 +219,52 @@ func print(in <-chan printContext, pretty bool) {
 				return
 			} else if multi {
 				for _, item := range output.([]any) {
-					printOutput(item, marshal, ctx.cmd.Raw)
+					if err := printOutput(item, marshal, ctx.cmd.Raw); err != nil {
+						warnf("failed to print output: %v\n", err)
+						return
+					}
 				}
 			} else {
-				printOutput(output, marshal, ctx.cmd.Raw)
+				if err := printOutput(output, marshal, ctx.cmd.Raw); err != nil {
+					warnf("failed to print output: %v\n", err)
+					return
+				}
 			}
 		} else {
-			printOutput(ctx.output, marshal, ctx.cmd.Raw)
+			if err := printOutput(ctx.output, marshal, ctx.cmd.Raw); err != nil {
+				warnf("failed to print output: %v\n", err)
+				return
+			}
 		}
 		close(ctx.done)
 	}
 }
 
-func printOutput(output any, marshal func(any) ([]byte, error), raw bool) {
+func printOutput(output any, marshal func(any) ([]byte, error), raw bool) error {
 	if raw {
 		switch output := output.(type) {
 		case []byte:
 			stdoutWriter.Write(output)
 			stdoutWriter.Write([]byte{'\n'})
-			return
+			return nil
 		case string:
 			io.WriteString(stdoutWriter, output)
 			io.WriteString(stdoutWriter, "\n")
-			return
+			return nil
 		case *string:
 			io.WriteString(stdoutWriter, *output)
 			io.WriteString(stdoutWriter, "\n")
-			return
+			return nil
 		}
 	}
 	// Normal JSON output
 	buf, err := marshal(output)
 	if err != nil {
-		failf("failed to marshal output %#v, err=%v", output, err)
+		return fmt.Errorf("failed to marshal output %#v, err=%v", output, err)
 	}
 	stdoutWriter.Write(buf)
 	stdoutWriter.Write([]byte{'\n'})
+	return nil
 }
 
 type object interface {
@@ -304,10 +314,6 @@ func quietPrint(in <-chan printContext) {
 		ctx := <-in
 		close(ctx.done)
 	}
-}
-
-func quitf(msg string, args ...interface{}) {
-	exitf(0, msg, args...)
 }
 
 func failf(msg string, args ...interface{}) {
@@ -369,49 +375,6 @@ func sanitizeUsername(u string) string {
 	return invalidClientIDCharactersRegExp.ReplaceAllString(u, "")
 }
 
-func randomString(length int) string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	buf := make([]byte, length)
-	r.Read(buf)
-	return fmt.Sprintf("%x", buf)[:length]
-}
-
-// setupCerts takes the paths to a tls certificate, CA, and certificate key in
-// a PEM format and returns a constructed tls.Config object.
-func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
-	if certPath == "" && caPath == "" && keyPath == "" {
-		return nil, nil
-	}
-
-	if certPath == "" || caPath == "" || keyPath == "" {
-		err := fmt.Errorf("certificate, CA and key path are required - got cert=%#v ca=%#v key=%#v", certPath, caPath, keyPath)
-		return nil, err
-	}
-
-	caString, err := os.ReadFile(caPath)
-	if err != nil {
-		return nil, err
-	}
-
-	caPool := x509.NewCertPool()
-	ok := caPool.AppendCertsFromPEM(caString)
-	if !ok {
-		failf("unable to add ca at %s to certificate pool", caPath)
-	}
-
-	clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, err
-	}
-
-	bundle := &tls.Config{
-		RootCAs:      caPool,
-		Certificates: []tls.Certificate{clientCert},
-	}
-	bundle.BuildNameToCertificate()
-	return bundle, nil
-}
-
 type authConfig struct {
 	Mode              string `json:"mode"`
 	CACert            string `json:"ca-certificate"`
@@ -434,7 +397,7 @@ func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
 	case "SASL":
 		return setupSASL(auth, saramaCfg)
 	default:
-		return fmt.Errorf("unsupport auth mode: %#v", auth.Mode)
+		return fmt.Errorf("unsupported auth mode: %#v", auth.Mode)
 	}
 }
 
@@ -461,7 +424,7 @@ func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
 	caPool := x509.NewCertPool()
 	ok := caPool.AppendCertsFromPEM(caString)
 	if !ok {
-		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+		return fmt.Errorf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
 	}
 
 	tlsCfg := &tls.Config{RootCAs: caPool}
@@ -484,7 +447,7 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 	caPool := x509.NewCertPool()
 	ok := caPool.AppendCertsFromPEM(caString)
 	if !ok {
-		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+		return fmt.Errorf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
 	}
 
 	clientCert, err := tls.LoadX509KeyPair(auth.ClientCert, auth.ClientCertKey)
@@ -507,9 +470,9 @@ func qualifyPath(argFN string, target *string) {
 	}
 }
 
-func readAuthFile(argFN string, envFN string, target *authConfig) {
+func readAuthFile(argFN string, envFN string, target *authConfig) error {
 	if argFN == "" && envFN == "" {
-		return
+		return nil
 	}
 
 	fn := argFN
@@ -517,16 +480,17 @@ func readAuthFile(argFN string, envFN string, target *authConfig) {
 		fn = envFN
 	}
 
-	byts, err := os.ReadFile(fn)
+	b, err := os.ReadFile(fn)
 	if err != nil {
-		failf("failed to read auth file err=%v", err)
+		return fmt.Errorf("failed to read auth file err=%v", err)
 	}
 
-	if err := json.Unmarshal(byts, target); err != nil {
-		failf("failed to unmarshal auth file err=%v", err)
+	if err := json.Unmarshal(b, target); err != nil {
+		return fmt.Errorf("failed to unmarshal auth file err=%v", err)
 	}
 
 	qualifyPath(fn, &target.CACert)
 	qualifyPath(fn, &target.ClientCert)
 	qualifyPath(fn, &target.ClientCertKey)
+	return nil
 }

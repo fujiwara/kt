@@ -21,50 +21,35 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func (cmd *produceCmd) failStartup(msg string) {
-	warnf(msg)
-	failf("use \"kt produce -help\" for more information")
-}
-
-func (cmd *produceCmd) prepare() {
+func (cmd *produceCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
 
-	if cmd.Topic == "" {
-		cmd.failStartup("Topic name is required.")
+	var err error
+	cmd.compression, err = kafkaCompression(cmd.Compression)
+	if err != nil {
+		return err
 	}
-
-	if cmd.DecodeValue != "" && cmd.DecodeValue != "string" && cmd.DecodeValue != "hex" && cmd.DecodeValue != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodevalue argument %#v, only string, hex and base64 are supported.`, cmd.DecodeValue))
-		return
-	}
-
-	if cmd.DecodeKey != "" && cmd.DecodeKey != "string" && cmd.DecodeKey != "hex" && cmd.DecodeKey != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodekey argument %#v, only string, hex and base64 are supported.`, cmd.DecodeKey))
-		return
-	}
-
-	cmd.compression = kafkaCompression(cmd.Compression)
+	return nil
 }
 
-func kafkaCompression(codecName string) sarama.CompressionCodec {
+func kafkaCompression(codecName string) (sarama.CompressionCodec, error) {
 	switch codecName {
 	case "gzip":
-		return sarama.CompressionGZIP
+		return sarama.CompressionGZIP, nil
 	case "snappy":
-		return sarama.CompressionSnappy
+		return sarama.CompressionSnappy, nil
 	case "lz4":
-		return sarama.CompressionLZ4
+		return sarama.CompressionLZ4, nil
 	case "":
-		return sarama.CompressionNone
+		return sarama.CompressionNone, nil
 	}
 
-	failf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
-	panic("unreachable")
+	return sarama.CompressionNone, fmt.Errorf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
 }
 
-func (cmd *produceCmd) findLeaders() {
+func (cmd *produceCmd) findLeaders() error {
 	var (
 		usr *user.User
 		err error
@@ -82,7 +67,7 @@ func (cmd *produceCmd) findLeaders() {
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
-		failf("failed to setup auth err=%v", err)
+		return fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
 loop:
@@ -118,30 +103,30 @@ loop:
 				for _, pm := range tm.Partitions {
 					b, ok := brokers[pm.Leader]
 					if !ok {
-						failf("failed to find leader in broker response, giving up")
+						return fmt.Errorf("failed to find leader in broker response, giving up")
 					}
 
 					if err = b.Open(cfg); err != nil && err != sarama.ErrAlreadyConnected {
-						failf("failed to open broker connection err=%s", err)
+						return fmt.Errorf("failed to open broker connection err=%s", err)
 					}
 					if connected, err := broker.Connected(); !connected && err != nil {
-						failf("failed to wait for broker connection to open err=%s", err)
+						return fmt.Errorf("failed to wait for broker connection to open err=%s", err)
 					}
 
 					cmd.leaders[pm.ID] = b
 				}
-				return
+				return nil
 			}
 		}
 	}
 
-	failf("failed to find leader for given topic")
+	return fmt.Errorf("failed to find leader for given topic")
 }
 
 type produceCmd struct {
 	baseCmd
 
-	Topic       string        `help:"Topic to produce to." env:"KT_TOPIC"`
+	Topic       string        `help:"Topic to produce to." env:"KT_TOPIC" required:""`
 	Partition   int32         `help:"Partition to produce to" default:"0"`
 	Batch       int           `help:"Batch size" default:"1"`
 	Timeout     time.Duration `help:"Timeout for request to Kafka" default:"5s"`
@@ -149,22 +134,26 @@ type produceCmd struct {
 	Literal     bool          `help:"Interpret stdin line literally and pass it as value, key as null"`
 	Compression string        `help:"Compression codec to use (gzip, snappy, lz4)" default:""`
 	Partitioner string        `help:"Partitioner to use (hashCode, hashCodeByValue)" default:""`
-	DecodeKey   string        `help:"Decode message key (string, hex, base64)" default:"string"`
-	DecodeValue string        `help:"Decode message value (string, hex, base64)" default:"string"`
+	DecodeKey   string        `help:"Decode message key (string, hex, base64)" default:"string" enum:"string,hex,base64"`
+	DecodeValue string        `help:"Decode message value (string, hex, base64)" default:"string" enum:"string,hex,base64"`
 	BufferSize  int           `help:"Buffer size for producer" default:"8192"`
 
 	compression sarama.CompressionCodec
 	leaders     map[int32]*sarama.Broker
 }
 
-func (cmd *produceCmd) run() {
-	cmd.prepare()
+func (cmd *produceCmd) run() error {
+	if err := cmd.prepare(); err != nil {
+		return err
+	}
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
 	defer cmd.close()
-	cmd.findLeaders()
+	if err := cmd.findLeaders(); err != nil {
+		return err
+	}
 	stdin := make(chan string)
 	lines := make(chan string)
 	messages := make(chan message)
@@ -183,6 +172,7 @@ func (cmd *produceCmd) run() {
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
 	go cmd.batchRecords(messages, batchedMessages)
 	cmd.produce(batchedMessages, out)
+	return nil
 }
 
 func (cmd *produceCmd) readStdinLines(max int, out chan string) {

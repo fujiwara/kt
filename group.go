@@ -75,17 +75,23 @@ const (
 	resetNotSpecified  = -23
 )
 
-func (cmd *groupCmd) run() {
+func (cmd *groupCmd) run() error {
 	var err error
 
-	cmd.prepare()
+	if err = cmd.prepare(); err != nil {
+		return err
+	}
 
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	if cmd.client, err = sarama.NewClient(cmd.brokers, cmd.saramaConfig()); err != nil {
-		failf("failed to create client err=%v", err)
+	cfg, err := cmd.saramaConfig()
+	if err != nil {
+		return err
+	}
+	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
+		return fmt.Errorf("failed to create client err=%v", err)
 	}
 
 	brokers := cmd.client.Brokers()
@@ -94,7 +100,11 @@ func (cmd *groupCmd) run() {
 	groups := []string{cmd.Group}
 	if cmd.Group == "" {
 		groups = []string{}
-		for _, g := range cmd.findGroups(brokers) {
+		allGroups, err := cmd.findGroups(brokers)
+		if err != nil {
+			return err
+		}
+		for _, g := range allGroups {
 			if cmd.FilterGroups == nil || cmd.FilterGroups.MatchString(g) {
 				groups = append(groups, g)
 			}
@@ -105,7 +115,11 @@ func (cmd *groupCmd) run() {
 	topics := []string{cmd.Topic}
 	if cmd.Topic == "" {
 		topics = []string{}
-		for _, t := range cmd.fetchTopics() {
+		allTopics, err := cmd.fetchTopics()
+		if err != nil {
+			return err
+		}
+		for _, t := range allTopics {
 			if cmd.FilterTopics == nil || cmd.FilterTopics.MatchString(t) {
 				topics = append(topics, t)
 			}
@@ -124,14 +138,18 @@ func (cmd *groupCmd) run() {
 
 			cmd.infof("%v/%v\n", i+1, len(groups))
 		}
-		return
+		return nil
 	}
 
 	topicPartitions := map[string][]int32{}
 	for _, topic := range topics {
 		parts := cmd.partitions
 		if len(parts) == 0 {
-			parts = cmd.fetchPartitions(topic)
+			var err error
+			parts, err = cmd.fetchPartitions(topic)
+			if err != nil {
+				return err
+			}
 			cmd.infof("found partitions=%v for topic=%v\n", parts, topic)
 		}
 		topicPartitions[topic] = parts
@@ -148,6 +166,7 @@ func (cmd *groupCmd) run() {
 		}
 	}
 	wg.Wait()
+	return nil
 }
 
 func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string, parts []int32) {
@@ -182,15 +201,15 @@ awaitGroupOffsets:
 	}
 }
 
-func (cmd *groupCmd) resolveOffset(top string, part int32, time int64) int64 {
+func (cmd *groupCmd) resolveOffset(top string, part int32, time int64) (int64, error) {
 	resolvedOff, err := cmd.client.GetOffset(top, part, time)
 	if err != nil {
-		failf("failed to get offset to reset to for partition=%d err=%v", part, err)
+		return 0, fmt.Errorf("failed to get offset to reset to for partition=%d err=%v", part, err)
 	}
 
 	cmd.infof("resolved offset %v for topic=%s partition=%d to %v\n", time, top, part, resolvedOff)
 
-	return resolvedOff
+	return resolvedOff, nil
 }
 
 func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part int32, results chan<- groupOffset) {
@@ -200,13 +219,15 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 
 	offsetManager, err := sarama.NewOffsetManagerFromClient(grp, cmd.client)
 	if err != nil {
-		failf("failed to create client err=%v", err)
+		warnf("failed to create client err=%v", err)
+		return
 	}
 	defer logClose("offset manager", offsetManager)
 
 	pom, err := offsetManager.ManagePartition(top, part)
 	if err != nil {
-		failf("failed to manage partition group=%s topic=%s partition=%d err=%v", grp, top, part, err)
+		warnf("failed to manage partition group=%s topic=%s partition=%d err=%v", grp, top, part, err)
+		return
 	}
 	defer logClose("partition offset manager", pom)
 
@@ -216,7 +237,11 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 	if cmd.reset >= 0 || specialOffset {
 		resolvedOff := cmd.reset
 		if specialOffset {
-			resolvedOff = cmd.resolveOffset(top, part, cmd.reset)
+			var err error
+			if resolvedOff, err = cmd.resolveOffset(top, part, cmd.reset); err != nil {
+				warnf("failed to resolve offset: %v", err)
+				return
+			}
 		}
 		if resolvedOff > groupOff {
 			pom.MarkOffset(resolvedOff, "")
@@ -227,25 +252,29 @@ func (cmd *groupCmd) fetchGroupOffset(wg *sync.WaitGroup, grp, top string, part 
 		groupOff = resolvedOff
 	}
 
-	partOff := cmd.resolveOffset(top, part, sarama.OffsetNewest)
+	partOff, err := cmd.resolveOffset(top, part, sarama.OffsetNewest)
+	if err != nil {
+		warnf("failed to resolve partition offset: %v", err)
+		return
+	}
 	lag := partOff - groupOff
 	results <- groupOffset{Partition: part, Offset: &groupOff, Lag: &lag}
 }
 
-func (cmd *groupCmd) fetchTopics() []string {
+func (cmd *groupCmd) fetchTopics() ([]string, error) {
 	tps, err := cmd.client.Topics()
 	if err != nil {
-		failf("failed to read topics err=%v", err)
+		return nil, fmt.Errorf("failed to read topics err=%v", err)
 	}
-	return tps
+	return tps, nil
 }
 
-func (cmd *groupCmd) fetchPartitions(top string) []int32 {
+func (cmd *groupCmd) fetchPartitions(top string) ([]int32, error) {
 	ps, err := cmd.client.Partitions(top)
 	if err != nil {
-		failf("failed to read partitions for topic=%s err=%v", top, err)
+		return nil, fmt.Errorf("failed to read partitions for topic=%s err=%v", top, err)
 	}
-	return ps
+	return ps, nil
 }
 
 type findGroupResult struct {
@@ -253,7 +282,7 @@ type findGroupResult struct {
 	group string
 }
 
-func (cmd *groupCmd) findGroups(brokers []*sarama.Broker) []string {
+func (cmd *groupCmd) findGroups(brokers []*sarama.Broker) ([]string, error) {
 	var (
 		doneCount int
 		groups    = []string{}
@@ -268,12 +297,12 @@ func (cmd *groupCmd) findGroups(brokers []*sarama.Broker) []string {
 awaitGroups:
 	for {
 		if doneCount == len(brokers) {
-			return groups
+			return groups, nil
 		}
 
 		select {
 		case err := <-errs:
-			failf("failed to find groups err=%v", err)
+			return nil, fmt.Errorf("failed to find groups err=%v", err)
 		case res := <-results:
 			if res.done {
 				doneCount++
@@ -312,7 +341,11 @@ func (cmd *groupCmd) connect(broker *sarama.Broker) error {
 		return nil
 	}
 
-	if err := broker.Open(cmd.saramaConfig()); err != nil {
+	cfg, err := cmd.saramaConfig()
+	if err != nil {
+		return err
+	}
+	if err := broker.Open(cfg); err != nil {
 		return err
 	}
 
@@ -328,7 +361,7 @@ func (cmd *groupCmd) connect(broker *sarama.Broker) error {
 	return nil
 }
 
-func (cmd *groupCmd) saramaConfig() *sarama.Config {
+func (cmd *groupCmd) saramaConfig() (*sarama.Config, error) {
 	var (
 		err error
 		usr *user.User
@@ -343,20 +376,15 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
-		failf("failed to setup auth err=%v", err)
+		return nil, fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
-	return cfg
+	return cfg, nil
 }
 
-func (cmd *groupCmd) failStartup(msg string) {
-	warnf(msg)
-	failf("use \"kt group -help\" for more information")
-}
-
-func (cmd *groupCmd) prepare() {
+func (cmd *groupCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
 	switch cmd.Partitions {
 	case "", "all":
@@ -366,20 +394,20 @@ func (cmd *groupCmd) prepare() {
 		for _, ps := range pss {
 			p, err := strconv.ParseInt(ps, 10, 32)
 			if err != nil {
-				failf("partition id invalid err=%v", err)
+				return fmt.Errorf("partition id invalid err=%v", err)
 			}
 			cmd.partitions = append(cmd.partitions, int32(p))
 		}
 	}
 
 	if cmd.partitions == nil {
-		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, cmd.Partitions)
+		return fmt.Errorf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all"`, cmd.Partitions)
 	}
 
 	cmd.brokers = cmd.addDefaultPorts(cmd.Brokers)
 
 	if cmd.Reset != "" && (cmd.Topic == "" || cmd.Group == "") {
-		failf("group and topic are required to reset offsets.")
+		return fmt.Errorf("group and topic are required to reset offsets")
 	}
 
 	cmd.resetTime = false
@@ -406,7 +434,8 @@ func (cmd *groupCmd) prepare() {
 		}
 		if err != nil {
 			warnf("failed to parse set %#v err=%v", cmd.Reset, err)
-			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h). `, cmd.Reset))
+			return fmt.Errorf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h)`, cmd.Reset)
 		}
 	}
+	return nil
 }

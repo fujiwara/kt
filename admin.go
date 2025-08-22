@@ -1,11 +1,13 @@
 package main
 
 import (
-	json "github.com/goccy/go-json"
+	"fmt"
 	"log"
 	"os"
 	"os/user"
 	"time"
+
+	json "github.com/goccy/go-json"
 
 	"github.com/IBM/sarama"
 )
@@ -26,9 +28,9 @@ type adminCmd struct {
 	admin       sarama.ClusterAdmin
 }
 
-func (cmd *adminCmd) prepare() {
+func (cmd *adminCmd) prepare() error {
 	if err := cmd.baseCmd.prepare(); err != nil {
-		failf("failed to prepare jq query err=%v", err)
+		return fmt.Errorf("failed to prepare jq query err=%v", err)
 	}
 
 	if cmd.Timeout > 0 {
@@ -40,54 +42,63 @@ func (cmd *adminCmd) prepare() {
 	if cmd.CreateTopic != "" {
 		buf, err := os.ReadFile(cmd.TopicDetail)
 		if err != nil {
-			failf("failed to read topic detail err=%v", err)
+			return fmt.Errorf("failed to read topic detail err=%v", err)
 		}
 
 		var detail sarama.TopicDetail
 		if err = json.Unmarshal(buf, &detail); err != nil {
-			failf("failed to unmarshal topic detail err=%v", err)
+			return fmt.Errorf("failed to unmarshal topic detail err=%v", err)
 		}
 		cmd.topicDetail = &detail
 	}
+	return nil
 }
 
-func (cmd *adminCmd) run() {
+func (cmd *adminCmd) run() error {
 	var err error
 
-	cmd.prepare()
+	if err = cmd.prepare(); err != nil {
+		return err
+	}
 
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cmd.saramaConfig()); err != nil {
-		failf("failed to create cluster admin err=%v", err)
+	cfg, err := cmd.saramaConfig()
+	if err != nil {
+		return err
+	}
+	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cfg); err != nil {
+		return fmt.Errorf("failed to create cluster admin err=%v", err)
 	}
 
 	if cmd.CreateTopic != "" {
-		cmd.runCreateTopic()
+		return cmd.runCreateTopic()
 	} else if cmd.DeleteTopic != "" {
-		cmd.runDeleteTopic()
+		return cmd.runDeleteTopic()
 	} else {
-		failf("need to supply at least one sub-command of: createtopic, deletetopic")
+		return fmt.Errorf("need to supply at least one sub-command of: createtopic, deletetopic")
 	}
 }
 
-func (cmd *adminCmd) runCreateTopic() {
+func (cmd *adminCmd) runCreateTopic() error {
 	err := cmd.admin.CreateTopic(cmd.CreateTopic, cmd.topicDetail, cmd.ValidateOnly)
 	if err != nil {
-		failf("failed to create topic err=%v", err)
+		return fmt.Errorf("failed to create topic err=%v", err)
 	}
+	return nil
 }
 
-func (cmd *adminCmd) runDeleteTopic() {
+func (cmd *adminCmd) runDeleteTopic() error {
 	err := cmd.admin.DeleteTopic(cmd.DeleteTopic)
 	if err != nil {
-		failf("failed to delete topic err=%v", err)
+		return fmt.Errorf("failed to delete topic err=%v", err)
 	}
+	return nil
 }
 
-func (cmd *adminCmd) saramaConfig() *sarama.Config {
+func (cmd *adminCmd) saramaConfig() (*sarama.Config, error) {
 	var (
 		err error
 		usr *user.User
@@ -106,8 +117,8 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 	}
 
 	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
-		failf("failed to setup auth err=%v", err)
+		return nil, fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
-	return cfg
+	return cfg, nil
 }
