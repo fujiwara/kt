@@ -130,12 +130,12 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.decodeKey = args.decodeKey
 	cmd.batch = args.batch
 	cmd.timeout = args.timeout
-	cmd.verbose = args.verbose
+	cmd.Verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.quiet = args.quiet
 	cmd.literal = args.literal
-	cmd.jq = args.jq
-	cmd.raw = args.raw
+	cmd.Jq = args.jq
+	cmd.Raw = args.raw
 	if err := cmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
@@ -267,7 +267,7 @@ type produceCmd struct {
 
 func (cmd *produceCmd) run(as []string) {
 	cmd.parseArgs(as)
-	if cmd.verbose {
+	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 

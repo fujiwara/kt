@@ -48,7 +48,7 @@ type consumeCmd struct {
 var offsetResume int64 = -3
 
 func debugf(cmd *consumeCmd, format string, args ...interface{}) {
-	if cmd.verbose {
+	if cmd.Verbose {
 		warnf("DEBUG: "+format, args...)
 	}
 }
@@ -268,11 +268,11 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	}
 	cmd.topic = args.topic
 	cmd.timeout = args.timeout
-	cmd.verbose = args.verbose
+	cmd.Verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.group = args.group
-	cmd.jq = args.jq
-	cmd.raw = args.raw
+	cmd.Jq = args.jq
+	cmd.Raw = args.raw
 	if err := cmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
@@ -660,7 +660,7 @@ func (cmd *consumeCmd) run(args []string) {
 
 	cmd.parseArgs(args)
 
-	if cmd.verbose {
+	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 

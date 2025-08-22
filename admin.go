@@ -48,7 +48,7 @@ func (cmd *adminCmd) parseArgs(as []string) {
 		err  error
 	)
 
-	cmd.verbose = args.verbose
+	cmd.Verbose = args.verbose
 	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
 	if err != nil {
 		failf("failed to read kafka version err=%v", err)
@@ -118,7 +118,7 @@ func (cmd *adminCmd) run(args []string) {
 
 	cmd.parseArgs(args)
 
-	if cmd.verbose {
+	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 

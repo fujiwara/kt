@@ -1,13 +1,10 @@
 package main
 
 import (
-	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/user"
 	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/IBM/sarama"
@@ -31,18 +28,19 @@ type topicArgs struct {
 type topicCmd struct {
 	baseCmd
 
-	brokers    []string
-	auth       authConfig
-	filter     *regexp.Regexp
-	partitions bool
-	leaders    bool
-	replicas   bool
-	config     bool
-	pretty     bool
-	version    sarama.KafkaVersion
+	Brokers         []string       `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
+	Auth            string         `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
+	Filter          *regexp.Regexp `help:"Regex to filter topics by name."`
+	Partitions      bool           `help:"Include information per partition."`
+	Leaders         bool           `help:"Include leader information per partition."`
+	Replicas        bool           `help:"Include replica ids per partition."`
+	Config          bool           `help:"Include topic configuration."`
+	ProtocolVersion string         `help:"Kafka protocol version" env:"KT_KAFKA_VERSION"`
 
-	client sarama.Client
-	admin  sarama.ClusterAdmin
+	version sarama.KafkaVersion
+	auth    authConfig
+	client  sarama.Client
+	admin   sarama.ClusterAdmin
 }
 
 type topic struct {
@@ -103,82 +101,15 @@ func (p partition) ToMap() map[string]any {
 	return m
 }
 
-func (cmd *topicCmd) parseFlags(as []string) topicArgs {
-	var (
-		args  topicArgs
-		flags = flag.NewFlagSet("topic", flag.ContinueOnError)
-	)
+func (cmd *topicCmd) prepare() {
+	readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth) // TODO: remove os.Getenv
 
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted.")
-	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
-	flags.BoolVar(&args.partitions, "partitions", false, "Include information per partition.")
-	flags.BoolVar(&args.leaders, "leaders", false, "Include leader information per partition.")
-	flags.BoolVar(&args.replicas, "replicas", false, "Include replica ids per partition.")
-	flags.BoolVar(&args.config, "config", false, "Include topic configuration.")
-	flags.StringVar(&args.filter, "filter", "", "Regex to filter topics by name.")
-	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
-	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.jq, "jq", "", "Apply jq filter to output (e.g., '.name').")
-	flags.BoolVar(&args.raw, "raw", false, "Output raw strings without JSON encoding (like jq -r).")
-	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage of topic:")
-		flags.PrintDefaults()
-		fmt.Fprintln(os.Stderr, topicDocString)
-	}
-
-	err := flags.Parse(as)
-	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
-		os.Exit(0)
-	} else if err != nil {
-		os.Exit(2)
-	}
-
-	return args
-}
-
-func (cmd *topicCmd) parseArgs(as []string) {
-	var (
-		err error
-		re  *regexp.Regexp
-
-		args       = cmd.parseFlags(as)
-		envBrokers = os.Getenv(ENV_BROKERS)
-	)
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
-	cmd.brokers = strings.Split(args.brokers, ",")
-	for i, b := range cmd.brokers {
-		if !strings.Contains(b, ":") {
-			cmd.brokers[i] = b + ":9092"
-		}
-	}
-
-	if re, err = regexp.Compile(args.filter); err != nil {
-		failf("invalid regex for filter err=%s", err)
-	}
-
-	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
-
-	cmd.filter = re
-	cmd.partitions = args.partitions
-	cmd.leaders = args.leaders
-	cmd.replicas = args.replicas
-	cmd.config = args.config
-	cmd.pretty = args.pretty
-	cmd.verbose = args.verbose
-	cmd.jq = args.jq
-	cmd.raw = args.raw
-	if err := cmd.prepare(); err != nil {
+	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
 
-	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
+	var err error
+	cmd.version, err = chooseKafkaVersion(cmd.ProtocolVersion)
 	if err != nil {
 		failf("failed to read kafka version err=%v", err)
 	}
@@ -203,23 +134,22 @@ func (cmd *topicCmd) connect() {
 		failf("failed to setup auth err=%v", err)
 	}
 
-	if cmd.client, err = sarama.NewClient(cmd.brokers, cfg); err != nil {
+	if cmd.client, err = sarama.NewClient(cmd.Brokers, cfg); err != nil {
 		failf("failed to create client err=%v", err)
 	}
-	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cfg); err != nil {
+	if cmd.admin, err = sarama.NewClusterAdmin(cmd.Brokers, cfg); err != nil {
 		failf("failed to create cluster admin err=%v", err)
 	}
 }
 
-func (cmd *topicCmd) run(as []string) {
+func (cmd *topicCmd) run() {
 	var (
 		err error
 		all []string
 		out = make(chan printContext)
 	)
-
-	cmd.parseArgs(as)
-	if cmd.verbose {
+	cmd.prepare()
+	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
@@ -233,12 +163,12 @@ func (cmd *topicCmd) run(as []string) {
 
 	topics := []string{}
 	for _, a := range all {
-		if cmd.filter.MatchString(a) {
+		if cmd.Filter == nil || cmd.Filter.MatchString(a) {
 			topics = append(topics, a)
 		}
 	}
 
-	go print(out, cmd.pretty)
+	go print(out, cmd.Pretty)
 
 	var wg sync.WaitGroup
 	for _, tn := range topics {
@@ -276,8 +206,7 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 		configEntries []sarama.ConfigEntry
 	)
 
-	if cmd.config {
-
+	if cmd.Config {
 		resource := sarama.ConfigResource{Name: name, Type: sarama.TopicResource}
 		if configEntries, err = cmd.admin.DescribeConfig(resource); err != nil {
 			return top, err
@@ -289,7 +218,7 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 		}
 	}
 
-	if !cmd.partitions {
+	if !cmd.Partitions {
 		return top, nil
 	}
 
@@ -308,14 +237,14 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 			return top, err
 		}
 
-		if cmd.leaders {
+		if cmd.Leaders {
 			if led, err = cmd.client.Leader(name, p); err != nil {
 				return top, err
 			}
 			np.Leader = led.Addr()
 		}
 
-		if cmd.replicas {
+		if cmd.Replicas {
 			if np.Replicas, err = cmd.client.Replicas(name, p); err != nil {
 				return top, err
 			}
@@ -330,8 +259,3 @@ func (cmd *topicCmd) readTopic(name string) (topic, error) {
 
 	return top, nil
 }
-
-var topicDocString = fmt.Sprintf(`
-The values for -brokers can also be set via the environment variable %s respectively.
-The values supplied on the command line win over environment variable values.`,
-	ENV_BROKERS)

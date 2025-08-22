@@ -117,26 +117,28 @@ type command interface {
 }
 
 type baseCmd struct {
-	verbose bool
-	jq      string
-	raw     bool
+	Pretty  bool   `help:"Control output pretty printing." default:"true" negatable:""`
+	Verbose bool   `help:"More verbose logging to stderr."`
+	Jq      string `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
+	Raw     bool   `help:"Output raw strings without JSON encoding (like jq -r)."`
+
 	jqQuery *gojq.Query
 }
 
 func (b *baseCmd) prepare() error {
 	var err error
-	if b.jq == "" {
+	if b.Jq == "" {
 		b.jqQuery = nil
 		return nil
 	}
-	if b.jqQuery, err = gojq.Parse(b.jq); err != nil {
-		return fmt.Errorf("failed to parse jq query %q: %v", b.jq, err)
+	if b.jqQuery, err = gojq.Parse(b.Jq); err != nil {
+		return fmt.Errorf("failed to parse jq query %q: %v", b.Jq, err)
 	}
 	return nil
 }
 
 func (b *baseCmd) infof(msg string, args ...interface{}) {
-	if b.verbose {
+	if b.Verbose {
 		warnf(msg, args...)
 	}
 }
@@ -155,15 +157,11 @@ func logClose(name string, c io.Closer) {
 	}
 }
 
-func chooseKafkaVersion(arg, env string) (sarama.KafkaVersion, error) {
-	switch {
-	case arg != "":
-		return sarama.ParseKafkaVersion(strings.TrimPrefix(arg, "v"))
-	case env != "":
-		return sarama.ParseKafkaVersion(strings.TrimPrefix(env, "v"))
-	default:
-		return sarama.V3_0_0_0, nil
+func chooseKafkaVersion(v string, ex ...string) (sarama.KafkaVersion, error) {
+	if v == "" {
+		return sarama.V3_0_0_0, nil // Default to V3.0.0.0 if no version specified
 	}
+	return sarama.ParseKafkaVersion(strings.TrimPrefix(v, "v"))
 }
 
 type printContext struct {
@@ -187,13 +185,13 @@ func print(in <-chan printContext, pretty bool) {
 				return
 			} else if multi {
 				for _, item := range output.([]any) {
-					printOutput(item, marshal, ctx.cmd.raw)
+					printOutput(item, marshal, ctx.cmd.Raw)
 				}
 			} else {
-				printOutput(output, marshal, ctx.cmd.raw)
+				printOutput(output, marshal, ctx.cmd.Raw)
 			}
 		} else {
-			printOutput(ctx.output, marshal, ctx.cmd.raw)
+			printOutput(ctx.output, marshal, ctx.cmd.Raw)
 		}
 		close(ctx.done)
 	}

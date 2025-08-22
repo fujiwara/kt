@@ -28,13 +28,8 @@ func TestChooseKafkaVersion(t *testing.T) {
 			expected: sarama.V1_0_0_0,
 		},
 		"env v2": {
-			env:      "v2.0.0",
+			arg:      "v2.0.0",
 			expected: sarama.V2_0_0_0,
-		},
-		"arg v1 wins over env v2": {
-			arg:      "v1.0.0",
-			env:      "v2.0.0",
-			expected: sarama.V1_0_0_0,
 		},
 		"invalid": {
 			arg: "234",
@@ -43,7 +38,7 @@ func TestChooseKafkaVersion(t *testing.T) {
 	}
 
 	for tn, tc := range td {
-		actual, err := chooseKafkaVersion(tc.arg, tc.env)
+		actual, err := chooseKafkaVersion(tc.arg)
 		if tc.err == nil {
 			if actual != tc.expected {
 				t.Errorf("%s: expected %v, got %v", tn, tc.expected, actual)
@@ -196,7 +191,7 @@ func TestApplyJqFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := baseCmd{jq: tt.query}
+			cmd := baseCmd{Jq: tt.query}
 			if err := cmd.prepare(); err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
@@ -284,7 +279,7 @@ func TestPrint(t *testing.T) {
 			// Capture output
 			var buf bytes.Buffer
 			stdoutWriter = &buf
-			cmd := baseCmd{jq: tt.query, raw: tt.raw}
+			cmd := baseCmd{Jq: tt.query, Raw: tt.raw}
 			if err := cmd.prepare(); err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
@@ -598,7 +593,7 @@ func TestToMapWithJq(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Prepare jq query
-			cmd := baseCmd{jq: tt.jqQuery}
+			cmd := baseCmd{Jq: tt.jqQuery}
 			if err := cmd.prepare(); err != nil {
 				t.Fatalf("failed to prepare jq query: %v", err)
 			}

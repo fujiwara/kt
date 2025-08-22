@@ -82,7 +82,7 @@ func (cmd *groupCmd) run(args []string) {
 
 	cmd.parseArgs(args)
 
-	if cmd.verbose {
+	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
@@ -369,11 +369,11 @@ func (cmd *groupCmd) parseArgs(as []string) {
 
 	cmd.topic = args.topic
 	cmd.group = args.group
-	cmd.verbose = args.verbose
+	cmd.Verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.offsets = args.offsets
-	cmd.jq = args.jq
-	cmd.raw = args.raw
+	cmd.Jq = args.jq
+	cmd.Raw = args.raw
 	if err := cmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}

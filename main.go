@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
+
+	"github.com/alecthomas/kong"
 )
 
 const AppVersion = "v14.2.0"
@@ -58,19 +61,55 @@ You can find more details at https://github.com/fgeller/kt
 
 %s`, ENV_AUTH, versionMessage)
 
+type CLI struct {
+	Consume *consumeCmd      `cmd:"" help:"consume messages."`
+	Produce *produceCmd      `cmd:"" help:"produce messages."`
+	Topic   *topicCmd        `cmd:"" help:"topic information."`
+	Group   *groupCmd        `cmd:"" help:"consumer group information and modification."`
+	Admin   *adminCmd        `cmd:"" help:"basic cluster administration."`
+	Version kong.VersionFlag `short:"v" help:"Show version and exit."`
+}
+
 func main() {
-	if len(os.Args) < 2 {
+	defer flushOutput()
+	sub, cli, err := parseKong(os.Args)
+	if err != nil {
+		failf(err.Error())
+	}
+	switch sub {
+	case "topic":
+		cli.Topic.run()
+	default:
+		mainLegacy(os.Args)
+	}
+}
+
+func parseKong(args []string) (string, *CLI, error) {
+	var cli CLI
+	parser, err := kong.New(&cli, kong.Vars{"version": versionMessage})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create kong parser: %w", err)
+	}
+	kongCtx, err := parser.Parse(args[1:])
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to parse args: %w", err)
+	}
+	return strings.Fields(kongCtx.Command())[0], &cli, nil
+}
+
+func mainLegacy(args []string) {
+	if len(args) < 2 {
 		failf(usageMessage)
 	}
-
 	var cmd command
-	switch os.Args[1] {
+	switch args[1] {
 	case "consume":
 		cmd = &consumeCmd{}
 	case "produce":
 		cmd = &produceCmd{}
 	case "topic":
-		cmd = &topicCmd{}
+		// cmd = &topicCmd{}
+		failf("xxx")
 	case "group":
 		cmd = &groupCmd{}
 	case "admin":
@@ -83,6 +122,5 @@ func main() {
 		failf(usageMessage)
 	}
 
-	cmd.run(os.Args[2:])
-	flushOutput()
+	cmd.run(args[2:])
 }

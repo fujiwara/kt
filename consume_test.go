@@ -1130,11 +1130,11 @@ func TestConsumeJqFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &consumeCmd{}
 			cmd.parseArgs(tt.args)
-			if cmd.jq != tt.expectJq {
-				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.jq)
+			if cmd.Jq != tt.expectJq {
+				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.Jq)
 			}
-			if cmd.raw != tt.expectRaw {
-				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.raw)
+			if cmd.Raw != tt.expectRaw {
+				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.Raw)
 			}
 		})
 	}
