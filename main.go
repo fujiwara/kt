@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
+
+	"github.com/alecthomas/kong"
 )
 
 const AppVersion = "v14.2.0"
@@ -30,59 +33,45 @@ func init() {
 	versionMessage += ")"
 }
 
-var usageMessage = fmt.Sprintf(`kt is a tool for Kafka.
-
-Usage:
-
-	kt command [arguments]
-
-The commands are:
-
-	consume    consume messages.
-	produce    produce messages.
-	topic      topic information.
-	group      consumer group information and modification.
-	admin      basic cluster administration.
-
-Use "kt [command] -help" for more information about the command.
-
-Use "kt -version" for details on what version you are running.
-
-Authentication:
-
-Authentication with Kafka can be configured via a JSON file.
-You can set the file name via an "-auth" flag to each command or
-set it via the environment variable %s.
-
-You can find more details at https://github.com/fgeller/kt
-
-%s`, ENV_AUTH, versionMessage)
+type CLI struct {
+	Consume *consumeCmd      `cmd:"" help:"consume messages."`
+	Produce *produceCmd      `cmd:"" help:"produce messages."`
+	Topic   *topicCmd        `cmd:"" help:"topic information."`
+	Group   *groupCmd        `cmd:"" help:"consumer group information and modification."`
+	Admin   *adminCmd        `cmd:"" help:"basic cluster administration."`
+	Version kong.VersionFlag `short:"v" help:"Show version and exit."`
+}
 
 func main() {
-	if len(os.Args) < 2 {
-		failf(usageMessage)
+	defer flushOutput()
+	sub, cli, err := parseKong(os.Args)
+	if err != nil {
+		failf(err.Error())
 	}
-
-	var cmd command
-	switch os.Args[1] {
+	switch sub {
 	case "consume":
-		cmd = &consumeCmd{}
-	case "produce":
-		cmd = &produceCmd{}
+		cli.Consume.run()
 	case "topic":
-		cmd = &topicCmd{}
-	case "group":
-		cmd = &groupCmd{}
+		cli.Topic.run()
 	case "admin":
-		cmd = &adminCmd{}
-	case "-h", "-help", "--help":
-		quitf(usageMessage)
-	case "-version", "--version":
-		quitf(versionMessage)
-	default:
-		failf(usageMessage)
+		cli.Admin.run()
+	case "group":
+		cli.Group.run()
+	case "produce":
+		cli.Produce.run()
 	}
-
-	cmd.run(os.Args[2:])
-	flushOutput()
 }
+
+func parseKong(args []string) (string, *CLI, error) {
+	var cli CLI
+	parser, err := kong.New(&cli, kong.Vars{"version": versionMessage})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create kong parser: %w", err)
+	}
+	kongCtx, err := parser.Parse(args[1:])
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to parse args: %w", err)
+	}
+	return strings.Fields(kongCtx.Command())[0], &cli, nil
+}
+

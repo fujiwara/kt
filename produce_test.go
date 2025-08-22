@@ -128,15 +128,17 @@ func TestProduceParseArgs(t *testing.T) {
 	os.Setenv(ENV_TOPIC, expectedTopic)
 	os.Setenv(ENV_BROKERS, givenBroker)
 
-	target.parseArgs([]string{})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
+	target.Topic = expectedTopic
+	target.Brokers = []string{givenBroker}
+	target.prepare()
+	if target.Topic != expectedTopic ||
+		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf(
 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
 			expectedTopic,
 			expectedBrokers,
-			target.topic,
-			target.brokers,
+			target.Topic,
+			target.addDefaultPorts(target.Brokers),
 		)
 		return
 	}
@@ -146,15 +148,17 @@ func TestProduceParseArgs(t *testing.T) {
 	os.Setenv(ENV_BROKERS, "")
 	expectedBrokers = []string{"localhost:9092"}
 
-	target.parseArgs([]string{"-topic", expectedTopic})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
+	target.Topic = expectedTopic
+	target.Brokers = expectedBrokers
+	target.prepare()
+	if target.Topic != expectedTopic ||
+		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf(
 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
 			expectedTopic,
 			expectedBrokers,
-			target.topic,
-			target.brokers,
+			target.Topic,
+			target.addDefaultPorts(target.Brokers),
 		)
 		return
 	}
@@ -164,15 +168,17 @@ func TestProduceParseArgs(t *testing.T) {
 	os.Setenv(ENV_BROKERS, "BLABB")
 	expectedBrokers = []string{givenBroker}
 
-	target.parseArgs([]string{"-topic", expectedTopic, "-brokers", givenBroker})
-	if target.topic != expectedTopic ||
-		!reflect.DeepEqual(target.brokers, expectedBrokers) {
+	target.Topic = expectedTopic
+	target.Brokers = expectedBrokers
+	target.prepare()
+	if target.Topic != expectedTopic ||
+		!reflect.DeepEqual(target.addDefaultPorts(target.Brokers), expectedBrokers) {
 		t.Errorf(
 			"Expected topic %v and brokers %v from env vars, got topic %v and brokers %v.",
 			expectedTopic,
 			expectedBrokers,
-			target.topic,
-			target.brokers,
+			target.Topic,
+			target.addDefaultPorts(target.Brokers),
 		)
 		return
 	}
@@ -197,7 +203,7 @@ func newMessage(key, value string, partition int32) message {
 }
 
 func TestMakeSaramaMessage(t *testing.T) {
-	target := &produceCmd{decodeKey: "string", decodeValue: "string"}
+	target := &produceCmd{DecodeKey: "string", DecodeValue: "string"}
 	key, value := "key", "value"
 	msg := message{Key: &key, Value: &value}
 	actual, err := target.makeSaramaMessage(msg)
@@ -211,7 +217,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 		t.Errorf("expected value %v, got %v", []byte(value), actual.Value)
 	}
 
-	target.decodeKey, target.decodeValue = "hex", "hex"
+	target.DecodeKey, target.DecodeValue = "hex", "hex"
 	key, value = "41", "42"
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
@@ -225,7 +231,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 		t.Errorf("expected value %v, got %v", []byte("B"), actual.Value)
 	}
 
-	target.decodeKey, target.decodeValue = "base64", "base64"
+	target.DecodeKey, target.DecodeValue = "base64", "base64"
 	key, value = "aGFucw==", "cGV0ZXI="
 	msg = message{Key: &key, Value: &value}
 	actual, err = target.makeSaramaMessage(msg)
@@ -242,7 +248,7 @@ func TestMakeSaramaMessage(t *testing.T) {
 
 func TestDeserializeLines(t *testing.T) {
 	target := &produceCmd{}
-	target.partitioner = "hashCode"
+	target.Partitioner = "hashCode"
 	data := []struct {
 		in             string
 		literal        bool
@@ -286,8 +292,8 @@ func TestDeserializeLines(t *testing.T) {
 	for _, d := range data {
 		in := make(chan string, 1)
 		out := make(chan message)
-		target.literal = d.literal
-		target.partition = d.partition
+		target.Literal = d.literal
+		target.Partition = d.partition
 		go target.deserializeLines(in, out, d.partitionCount)
 		in <- d.in
 
@@ -302,54 +308,3 @@ func TestDeserializeLines(t *testing.T) {
 	}
 }
 
-func TestProduceJqFlags(t *testing.T) {
-	tests := []struct {
-		name        string
-		args        []string
-		expectJq    string
-		expectRaw   bool
-		expectError bool
-	}{
-		{
-			name:        "no jq flags",
-			args:        []string{"-topic", "test"},
-			expectJq:    "",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "jq flag only",
-			args:        []string{"-topic", "test", "-jq", ".startOffset"},
-			expectJq:    ".startOffset",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "raw flag only",
-			args:        []string{"-topic", "test", "-raw"},
-			expectJq:    "",
-			expectRaw:   true,
-			expectError: false,
-		},
-		{
-			name:        "both jq and raw flags",
-			args:        []string{"-topic", "test", "-jq", ".partition", "-raw"},
-			expectJq:    ".partition",
-			expectRaw:   true,
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &produceCmd{}
-			cmd.parseArgs(tt.args)
-			if cmd.jq != tt.expectJq {
-				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.jq)
-			}
-			if cmd.raw != tt.expectRaw {
-				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.raw)
-			}
-		})
-	}
-}

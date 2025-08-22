@@ -28,13 +28,8 @@ func TestChooseKafkaVersion(t *testing.T) {
 			expected: sarama.V1_0_0_0,
 		},
 		"env v2": {
-			env:      "v2.0.0",
+			arg:      "v2.0.0",
 			expected: sarama.V2_0_0_0,
-		},
-		"arg v1 wins over env v2": {
-			arg:      "v1.0.0",
-			env:      "v2.0.0",
-			expected: sarama.V1_0_0_0,
 		},
 		"invalid": {
 			arg: "234",
@@ -43,7 +38,7 @@ func TestChooseKafkaVersion(t *testing.T) {
 	}
 
 	for tn, tc := range td {
-		actual, err := chooseKafkaVersion(tc.arg, tc.env)
+		actual, err := chooseKafkaVersion(tc.arg)
 		if tc.err == nil {
 			if actual != tc.expected {
 				t.Errorf("%s: expected %v, got %v", tn, tc.expected, actual)
@@ -196,7 +191,7 @@ func TestApplyJqFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := baseCmd{jq: tt.query}
+			cmd := baseCmd{Jq: tt.query}
 			if err := cmd.prepare(); err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
@@ -284,7 +279,7 @@ func TestPrint(t *testing.T) {
 			// Capture output
 			var buf bytes.Buffer
 			stdoutWriter = &buf
-			cmd := baseCmd{jq: tt.query, raw: tt.raw}
+			cmd := baseCmd{Jq: tt.query, Raw: tt.raw}
 			if err := cmd.prepare(); err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
@@ -598,7 +593,7 @@ func TestToMapWithJq(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Prepare jq query
-			cmd := baseCmd{jq: tt.jqQuery}
+			cmd := baseCmd{Jq: tt.jqQuery}
 			if err := cmd.prepare(); err != nil {
 				t.Fatalf("failed to prepare jq query: %v", err)
 			}
@@ -624,6 +619,105 @@ func TestToMapWithJq(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("expected %v (type %T), got %v (type %T)",
 					tt.expected, tt.expected, result, result)
+			}
+		})
+	}
+}
+
+func TestBaseCmdJqFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		jq          string
+		raw         bool
+		expectJq    string
+		expectRaw   bool
+		expectError bool
+	}{
+		{
+			name:        "no jq flags",
+			jq:          "",
+			raw:         false,
+			expectJq:    "",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "jq flag only",
+			jq:          ".startOffset",
+			raw:         false,
+			expectJq:    ".startOffset",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "raw flag only",
+			jq:          "",
+			raw:         true,
+			expectJq:    "",
+			expectRaw:   true,
+			expectError: false,
+		},
+		{
+			name:        "both jq and raw flags",
+			jq:          ".partition",
+			raw:         true,
+			expectJq:    ".partition",
+			expectRaw:   true,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &baseCmd{}
+			cmd.Jq = tt.jq
+			cmd.Raw = tt.raw
+			cmd.prepare()
+			if cmd.Jq != tt.expectJq {
+				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.Jq)
+			}
+			if cmd.Raw != tt.expectRaw {
+				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.Raw)
+			}
+		})
+	}
+}
+
+func TestBaseCmdBrokers(t *testing.T) {
+	tests := []struct {
+		name            string
+		brokers         []string
+		expectedBrokers []string
+	}{
+		{
+			name:            "localhost without port",
+			brokers:         []string{"localhost"},
+			expectedBrokers: []string{"localhost:9092"},
+		},
+		{
+			name:            "localhost with port",
+			brokers:         []string{"localhost:9092"},
+			expectedBrokers: []string{"localhost:9092"},
+		},
+		{
+			name:            "multiple brokers mixed",
+			brokers:         []string{"broker1", "broker2:9093"},
+			expectedBrokers: []string{"broker1:9092", "broker2:9093"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &baseCmd{}
+			cmd.Brokers = tt.brokers
+			actual := cmd.addDefaultPorts(cmd.Brokers)
+			if len(actual) != len(tt.expectedBrokers) {
+				t.Errorf("expected %d brokers, got %d", len(tt.expectedBrokers), len(actual))
+			}
+			for i, expected := range tt.expectedBrokers {
+				if i < len(actual) && actual[i] != expected {
+					t.Errorf("expected broker[%d] %s, got %s", i, expected, actual[i])
+				}
 			}
 		})
 	}

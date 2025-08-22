@@ -10,7 +10,7 @@ build:
 dist:
 	goreleaser build --snapshot --clean
 
-dep-up:
+dep-up: test-secrets
 	docker compose -f ./test-dependencies.yml up -d
 
 dep-down:

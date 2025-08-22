@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -19,20 +18,19 @@ import (
 type groupCmd struct {
 	baseCmd
 
-	brokers      []string
-	auth         authConfig
-	group        string
-	filterGroups *regexp.Regexp
-	filterTopics *regexp.Regexp
-	topic        string
-	partitions   []int32
-	reset        int64
-	resetTime    bool
-	pretty       bool
-	version      sarama.KafkaVersion
-	offsets      bool
+	Topic        string         `help:"Topic to consume." env:"KT_TOPIC"`
+	Group        string         `help:"Consumer group name."`
+	FilterGroups *regexp.Regexp `help:"Regex to filter groups."`
+	FilterTopics *regexp.Regexp `help:"Regex to filter topics."`
+	Reset        string         `help:"Target offset to reset for consumer group (\"newest\", \"oldest\", a time, or specific offset)"`
+	Partitions   string         `help:"Comma separated list of partitions to limit offsets to, or all" default:"all"`
+	Offsets      bool           `help:"Controls if offsets should be fetched" default:"true"`
 
-	client sarama.Client
+	brokers    []string
+	partitions []int32
+	reset      int64
+	resetTime  bool
+	client     sarama.Client
 }
 
 type group struct {
@@ -77,12 +75,12 @@ const (
 	resetNotSpecified  = -23
 )
 
-func (cmd *groupCmd) run(args []string) {
+func (cmd *groupCmd) run() {
 	var err error
 
-	cmd.parseArgs(args)
+	cmd.prepare()
 
-	if cmd.verbose {
+	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
@@ -93,22 +91,22 @@ func (cmd *groupCmd) run(args []string) {
 	brokers := cmd.client.Brokers()
 	cmd.infof("found %v brokers\n", len(brokers))
 
-	groups := []string{cmd.group}
-	if cmd.group == "" {
+	groups := []string{cmd.Group}
+	if cmd.Group == "" {
 		groups = []string{}
 		for _, g := range cmd.findGroups(brokers) {
-			if cmd.filterGroups.MatchString(g) {
+			if cmd.FilterGroups == nil || cmd.FilterGroups.MatchString(g) {
 				groups = append(groups, g)
 			}
 		}
 	}
 	cmd.infof("found %v groups\n", len(groups))
 
-	topics := []string{cmd.topic}
-	if cmd.topic == "" {
+	topics := []string{cmd.Topic}
+	if cmd.Topic == "" {
 		topics = []string{}
 		for _, t := range cmd.fetchTopics() {
-			if cmd.filterTopics.MatchString(t) {
+			if cmd.FilterTopics == nil || cmd.FilterTopics.MatchString(t) {
 				topics = append(topics, t)
 			}
 		}
@@ -116,9 +114,9 @@ func (cmd *groupCmd) run(args []string) {
 	cmd.infof("found %v topics\n", len(topics))
 
 	out := make(chan printContext)
-	go print(out, cmd.pretty)
+	go print(out, cmd.Pretty)
 
-	if !cmd.offsets {
+	if !cmd.Offsets {
 		for i, grp := range groups {
 			ctx := printContext{output: group{Name: grp}, done: make(chan struct{}), cmd: cmd.baseCmd}
 			out <- ctx
@@ -337,14 +335,14 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 		cfg = sarama.NewConfig()
 	)
 
-	cfg.Version = cmd.version
+	cfg.Version = cmd.getKafkaVersion()
 	if usr, err = user.Current(); err != nil {
 		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-group-" + sanitizeUsername(usr.Username)
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
-	if err = setupAuth(cmd.auth, cfg); err != nil {
+	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
 	}
 
@@ -356,40 +354,15 @@ func (cmd *groupCmd) failStartup(msg string) {
 	failf("use \"kt group -help\" for more information")
 }
 
-func (cmd *groupCmd) parseArgs(as []string) {
-	var (
-		err  error
-		args = cmd.parseFlags(as)
-	)
-
-	envTopic := os.Getenv(ENV_TOPIC)
-	if args.topic == "" {
-		args.topic = envTopic
-	}
-
-	cmd.topic = args.topic
-	cmd.group = args.group
-	cmd.verbose = args.verbose
-	cmd.pretty = args.pretty
-	cmd.offsets = args.offsets
-	cmd.jq = args.jq
-	cmd.raw = args.raw
-	if err := cmd.prepare(); err != nil {
+func (cmd *groupCmd) prepare() {
+	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
-
-	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
-	if err != nil {
-		failf("failed to read kafka version err=%v", err)
-	}
-
-	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
-
-	switch args.partitions {
+	switch cmd.Partitions {
 	case "", "all":
 		cmd.partitions = []int32{}
 	default:
-		pss := strings.Split(args.partitions, ",")
+		pss := strings.Split(cmd.Partitions, ",")
 		for _, ps := range pss {
 			p, err := strconv.ParseInt(ps, 10, 32)
 			if err != nil {
@@ -400,24 +373,18 @@ func (cmd *groupCmd) parseArgs(as []string) {
 	}
 
 	if cmd.partitions == nil {
-		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, args.partitions)
+		failf(`failed to interpret partitions flag %#v. Should be a comma separated list of partitions or "all".`, cmd.Partitions)
 	}
 
-	if cmd.filterGroups, err = regexp.Compile(args.filterGroups); err != nil {
-		failf("groups filter regexp invalid err=%v", err)
-	}
+	cmd.brokers = cmd.addDefaultPorts(cmd.Brokers)
 
-	if cmd.filterTopics, err = regexp.Compile(args.filterTopics); err != nil {
-		failf("topics filter regexp invalid err=%v", err)
-	}
-
-	if args.reset != "" && (args.topic == "" || args.group == "") {
+	if cmd.Reset != "" && (cmd.Topic == "" || cmd.Group == "") {
 		failf("group and topic are required to reset offsets.")
 	}
 
 	cmd.resetTime = false
 
-	switch args.reset {
+	switch cmd.Reset {
 	case "newest":
 		cmd.reset = sarama.OffsetNewest
 	case "oldest":
@@ -426,128 +393,20 @@ func (cmd *groupCmd) parseArgs(as []string) {
 		// optional flag
 		cmd.reset = resetNotSpecified
 	default:
-		cmd.reset, err = strconv.ParseInt(args.reset, 10, 64)
+		var err error
+		cmd.reset, err = strconv.ParseInt(cmd.Reset, 10, 64)
 		if err != nil {
 			// Try parsing as time string (now, RFC3339, or relative duration)
 			var dt *time.Time
-			dt, err = parseTimeString(args.reset)
+			dt, err = parseTimeString(cmd.Reset)
 			if err == nil {
 				cmd.reset = dt.UnixMilli()
 				cmd.resetTime = true
 			}
 		}
 		if err != nil {
-			warnf("failed to parse set %#v err=%v", args.reset, err)
-			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h). `, args.reset))
-		}
-	}
-
-	envBrokers := os.Getenv(ENV_BROKERS)
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
-	cmd.brokers = strings.Split(args.brokers, ",")
-	for i, b := range cmd.brokers {
-		if !strings.Contains(b, ":") {
-			cmd.brokers[i] = b + ":9092"
+			warnf("failed to parse set %#v err=%v", cmd.Reset, err)
+			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h). `, cmd.Reset))
 		}
 	}
 }
-
-type groupArgs struct {
-	topic        string
-	brokers      string
-	auth         string
-	partitions   string
-	group        string
-	filterGroups string
-	filterTopics string
-	reset        string
-	resetTime    bool
-	verbose      bool
-	pretty       bool
-	version      string
-	offsets      bool
-	jq           string
-	raw          bool
-}
-
-func (cmd *groupCmd) parseFlags(as []string) groupArgs {
-	var args groupArgs
-	flags := flag.NewFlagSet("group", flag.ContinueOnError)
-	flags.StringVar(&args.topic, "topic", "", "Topic to consume (required).")
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
-	flags.StringVar(&args.group, "group", "", "Consumer group name.")
-	flags.StringVar(&args.filterGroups, "filter-groups", "", "Regex to filter groups.")
-	flags.StringVar(&args.filterTopics, "filter-topics", "", "Regex to filter topics.")
-	flags.StringVar(&args.reset, "reset", "", "Target offset to reset for consumer group (\"newest\", \"oldest\", a time, or specific offset)")
-	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
-	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.partitions, "partitions", allPartitionsHuman, "comma separated list of partitions to limit offsets to, or all")
-	flags.BoolVar(&args.offsets, "offsets", true, "Controls if offsets should be fetched (defaults to true)")
-	flags.StringVar(&args.jq, "jq", "", "Apply jq filter to output (e.g., '.name').")
-	flags.BoolVar(&args.raw, "raw", false, "Output raw strings without JSON encoding (like jq -r).")
-
-	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage of group:")
-		flags.PrintDefaults()
-		fmt.Fprintln(os.Stderr, groupDocString)
-	}
-
-	err := flags.Parse(as)
-	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
-		os.Exit(0)
-	} else if err != nil {
-		os.Exit(2)
-	}
-
-	return args
-}
-
-var groupDocString = fmt.Sprintf(`
-The values for -topic and -brokers can also be set via environment variables %s and %s respectively.
-The values supplied on the command line win over environment variable values.
-
-The group command can be used to list groups, their offsets and lag and to reset a group's offset.
-
-When an explicit offset hasn't been set yet, kt prints out the respective sarama constants, cf. https://godoc.org/github.com/IBM/sarama#pkg-constants
-
-To simply list all groups:
-
-kt group
-
-This is faster when not fetching offsets:
-
-kt group -offsets=false
-
-To filter by regex:
-
-kt group -filter specials
-
-To filter by topic:
-
-kt group -topic fav-topic
-
-To reset a consumer group's offset to a specific value on a single partition:
-
-kt group -reset 23 -topic fav-topic -group specials -partitions 2
-
-To reset a consumer group's offset to the newest currently available on all partitions:
-
-kt group -reset newest -topic fav-topic -group specials -partitions all
-
-To reset a consumer group's offset to the newest that was available at a specific time on all partitions:
-
-kt group -reset -6h -topic fav-topic -group specials -partitions all
-
-Supported time formats for -reset:
-- "now" - current time
-- RFC3339 absolute time: "2006-01-02T15:04:05Z07:00"
-- Relative duration: "+5m" (future), "-1h" (past)
-`, ENV_TOPIC, ENV_BROKERS)

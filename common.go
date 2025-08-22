@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -112,33 +113,68 @@ const (
 
 var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
-type command interface {
-	run(args []string)
-}
 
 type baseCmd struct {
-	verbose bool
-	jq      string
-	raw     bool
+	Pretty          bool     `help:"Control output pretty printing." default:"true" negatable:""`
+	Verbose         bool     `help:"More verbose logging to stderr."`
+	Jq              string   `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
+	Raw             bool     `help:"Output raw strings without JSON encoding (like jq -r)."`
+	ProtocolVersion string   `help:"Kafka protocol version" env:"KT_KAFKA_VERSION"`
+	Brokers         []string `help:"Comma separated list of brokers. Port defaults to 9092 when omitted." env:"KT_BROKERS" default:"localhost:9092"`
+	Auth            string   `help:"Path to auth configuration file, can also be set via KT_AUTH env variable." env:"KT_AUTH"`
+
 	jqQuery *gojq.Query
+	version sarama.KafkaVersion
+	auth    authConfig
 }
 
 func (b *baseCmd) prepare() error {
 	var err error
-	if b.jq == "" {
+	if b.Jq == "" {
 		b.jqQuery = nil
-		return nil
+	} else {
+		if b.jqQuery, err = gojq.Parse(b.Jq); err != nil {
+			return fmt.Errorf("failed to parse jq query %q: %v", b.Jq, err)
+		}
 	}
-	if b.jqQuery, err = gojq.Parse(b.jq); err != nil {
-		return fmt.Errorf("failed to parse jq query %q: %v", b.jq, err)
+
+	// Parse Kafka version
+	b.version, err = chooseKafkaVersion(b.ProtocolVersion)
+	if err != nil {
+		return fmt.Errorf("failed to read kafka version: %v", err)
 	}
+
+	// Read auth configuration
+	readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth)
+
 	return nil
 }
 
 func (b *baseCmd) infof(msg string, args ...interface{}) {
-	if b.verbose {
+	if b.Verbose {
 		warnf(msg, args...)
 	}
+}
+
+// getKafkaVersion returns the parsed Kafka version
+func (b *baseCmd) getKafkaVersion() sarama.KafkaVersion {
+	return b.version
+}
+
+// addDefaultPorts adds default port 9092 to broker addresses if missing
+func (b *baseCmd) addDefaultPorts(brokers []string) []string {
+	result := make([]string, len(brokers))
+	for i, broker := range brokers {
+		host, port, err := net.SplitHostPort(broker)
+		if err != nil {
+			// No port specified, add default port
+			result[i] = net.JoinHostPort(broker, "9092")
+		} else {
+			// Port already specified, keep as is
+			result[i] = net.JoinHostPort(host, port)
+		}
+	}
+	return result
 }
 
 func warnf(msg string, args ...interface{}) {
@@ -155,15 +191,11 @@ func logClose(name string, c io.Closer) {
 	}
 }
 
-func chooseKafkaVersion(arg, env string) (sarama.KafkaVersion, error) {
-	switch {
-	case arg != "":
-		return sarama.ParseKafkaVersion(strings.TrimPrefix(arg, "v"))
-	case env != "":
-		return sarama.ParseKafkaVersion(strings.TrimPrefix(env, "v"))
-	default:
-		return sarama.V3_0_0_0, nil
+func chooseKafkaVersion(v string, ex ...string) (sarama.KafkaVersion, error) {
+	if v == "" {
+		return sarama.V3_0_0_0, nil // Default to V3.0.0.0 if no version specified
 	}
+	return sarama.ParseKafkaVersion(strings.TrimPrefix(v, "v"))
 }
 
 type printContext struct {
@@ -187,13 +219,13 @@ func print(in <-chan printContext, pretty bool) {
 				return
 			} else if multi {
 				for _, item := range output.([]any) {
-					printOutput(item, marshal, ctx.cmd.raw)
+					printOutput(item, marshal, ctx.cmd.Raw)
 				}
 			} else {
-				printOutput(output, marshal, ctx.cmd.raw)
+				printOutput(output, marshal, ctx.cmd.Raw)
 			}
 		} else {
-			printOutput(ctx.output, marshal, ctx.cmd.raw)
+			printOutput(ctx.output, marshal, ctx.cmd.Raw)
 		}
 		close(ctx.done)
 	}

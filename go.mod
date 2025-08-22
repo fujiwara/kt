@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/IBM/sarama v1.45.2
+	github.com/alecthomas/kong v1.12.1
 	github.com/davecgh/go-spew v1.1.1
 	github.com/goccy/go-json v0.10.4
 	github.com/itchyny/gojq v0.12.17

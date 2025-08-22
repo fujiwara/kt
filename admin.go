@@ -1,13 +1,10 @@
 package main
 
 import (
-	"flag"
-	"fmt"
 	json "github.com/goccy/go-json"
 	"log"
 	"os"
 	"os/user"
-	"strings"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -16,79 +13,32 @@ import (
 type adminCmd struct {
 	baseCmd
 
-	brokers []string
-	version sarama.KafkaVersion
-	timeout *time.Duration
-	auth    authConfig
+	Timeout time.Duration `help:"Timeout for request to Kafka" default:"3s"`
 
-	createTopic  string
-	topicDetail  *sarama.TopicDetail
-	validateOnly bool
-	deleteTopic  string
+	CreateTopic  string `help:"Name of the topic that should be created."`
+	TopicDetail  string `help:"Path to JSON encoded topic detail. cf sarama.TopicDetail"`
+	ValidateOnly bool   `help:"Flag to indicate whether operation should only validate input (supported for createtopic)."`
+	DeleteTopic  string `help:"Name of the topic that should be deleted."`
 
-	admin sarama.ClusterAdmin
+	brokers     []string
+	timeout     *time.Duration
+	topicDetail *sarama.TopicDetail
+	admin       sarama.ClusterAdmin
 }
 
-type adminArgs struct {
-	brokers string
-	verbose bool
-	version string
-	timeout string
-	auth    string
-
-	createTopic     string
-	topicDetailPath string
-	validateOnly    bool
-	deleteTopic     string
-}
-
-func (cmd *adminCmd) parseArgs(as []string) {
-	var (
-		args = cmd.parseFlags(as)
-		err  error
-	)
-
-	cmd.verbose = args.verbose
-	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
-	if err != nil {
-		failf("failed to read kafka version err=%v", err)
+func (cmd *adminCmd) prepare() {
+	if err := cmd.baseCmd.prepare(); err != nil {
+		failf("failed to prepare jq query err=%v", err)
 	}
 
-	cmd.timeout, err = parseTimeout(os.Getenv(ENV_ADMIN_TIMEOUT))
-	if err != nil {
-		failf("failed to read timeout from env var err=%v", err)
+	if cmd.Timeout > 0 {
+		cmd.timeout = &cmd.Timeout
 	}
 
-	if args.timeout != "" {
-		cmd.timeout, err = parseTimeout(args.timeout)
-		if err != nil {
-			failf("failed to read timeout from args err=%v", err)
-		}
-	}
+	cmd.brokers = cmd.addDefaultPorts(cmd.Brokers)
 
-	readAuthFile(args.auth, os.Getenv(ENV_AUTH), &cmd.auth)
-
-	envBrokers := os.Getenv(ENV_BROKERS)
-	if args.brokers == "" {
-		if envBrokers != "" {
-			args.brokers = envBrokers
-		} else {
-			args.brokers = "localhost:9092"
-		}
-	}
-	cmd.brokers = strings.Split(args.brokers, ",")
-	for i, b := range cmd.brokers {
-		if !strings.Contains(b, ":") {
-			cmd.brokers[i] = b + ":9092"
-		}
-	}
-
-	cmd.validateOnly = args.validateOnly
-	cmd.createTopic = args.createTopic
-	cmd.deleteTopic = args.deleteTopic
-
-	if cmd.createTopic != "" {
-		buf, err := os.ReadFile(args.topicDetailPath)
+	if cmd.CreateTopic != "" {
+		buf, err := os.ReadFile(cmd.TopicDetail)
 		if err != nil {
 			failf("failed to read topic detail err=%v", err)
 		}
@@ -101,24 +51,12 @@ func (cmd *adminCmd) parseArgs(as []string) {
 	}
 }
 
-func parseTimeout(s string) (*time.Duration, error) {
-	if s == "" {
-		return nil, nil
-	}
-
-	v, err := time.ParseDuration(s)
-	if err != nil {
-		return nil, err
-	}
-	return &v, nil
-}
-
-func (cmd *adminCmd) run(args []string) {
+func (cmd *adminCmd) run() {
 	var err error
 
-	cmd.parseArgs(args)
+	cmd.prepare()
 
-	if cmd.verbose {
+	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
@@ -126,9 +64,9 @@ func (cmd *adminCmd) run(args []string) {
 		failf("failed to create cluster admin err=%v", err)
 	}
 
-	if cmd.createTopic != "" {
+	if cmd.CreateTopic != "" {
 		cmd.runCreateTopic()
-	} else if cmd.deleteTopic != "" {
+	} else if cmd.DeleteTopic != "" {
 		cmd.runDeleteTopic()
 	} else {
 		failf("need to supply at least one sub-command of: createtopic, deletetopic")
@@ -136,14 +74,14 @@ func (cmd *adminCmd) run(args []string) {
 }
 
 func (cmd *adminCmd) runCreateTopic() {
-	err := cmd.admin.CreateTopic(cmd.createTopic, cmd.topicDetail, cmd.validateOnly)
+	err := cmd.admin.CreateTopic(cmd.CreateTopic, cmd.topicDetail, cmd.ValidateOnly)
 	if err != nil {
 		failf("failed to create topic err=%v", err)
 	}
 }
 
 func (cmd *adminCmd) runDeleteTopic() {
-	err := cmd.admin.DeleteTopic(cmd.deleteTopic)
+	err := cmd.admin.DeleteTopic(cmd.DeleteTopic)
 	if err != nil {
 		failf("failed to delete topic err=%v", err)
 	}
@@ -156,7 +94,7 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 		cfg = sarama.NewConfig()
 	)
 
-	cfg.Version = cmd.version
+	cfg.Version = cmd.getKafkaVersion()
 	if usr, err = user.Current(); err != nil {
 		cmd.infof("Failed to read current user err=%v", err)
 	}
@@ -167,54 +105,9 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 		cfg.Admin.Timeout = *cmd.timeout
 	}
 
-	if err = setupAuth(cmd.auth, cfg); err != nil {
+	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
 		failf("failed to setup auth err=%v", err)
 	}
 
 	return cfg
 }
-
-func (cmd *adminCmd) parseFlags(as []string) adminArgs {
-	var args adminArgs
-	flags := flag.NewFlagSet("consume", flag.ContinueOnError)
-	flags.StringVar(&args.brokers, "brokers", "", "Comma separated list of brokers. Port defaults to 9092 when omitted (defaults to localhost:9092).")
-	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
-	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
-	flags.StringVar(&args.timeout, "timeout", "", "Timeout for request to Kafka (default: 3s)")
-	flags.StringVar(&args.auth, "auth", "", fmt.Sprintf("Path to auth configuration file, can also be set via %s env variable", ENV_AUTH))
-
-	flags.StringVar(&args.createTopic, "createtopic", "", "Name of the topic that should be created.")
-	flags.StringVar(&args.topicDetailPath, "topicdetail", "", "Path to JSON encoded topic detail. cf sarama.TopicDetail")
-	flags.BoolVar(&args.validateOnly, "validateonly", false, "Flag to indicate whether operation should only validate input (supported for createtopic).")
-
-	flags.StringVar(&args.deleteTopic, "deletetopic", "", "Name of the topic that should be deleted.")
-
-	flags.Usage = func() {
-		warnf("Usage of admin:")
-		flags.PrintDefaults()
-		warnf(adminDocString + "\n")
-	}
-
-	err := flags.Parse(as)
-	if err != nil && strings.Contains(err.Error(), "flag: help requested") {
-		os.Exit(0)
-	} else if err != nil {
-		os.Exit(2)
-	}
-
-	return args
-}
-
-var adminDocString = fmt.Sprintf(`
-The value for -brokers can also be set via environment variables %s.
-The value supplied on the command line wins over the environment variable value.
-
-If both -createtopic and deletetopic are supplied, -createtopic wins.
-
-The topic details should be passed via a JSON file that represents a sarama.TopicDetail struct.
-cf https://godoc.org/github.com/IBM/sarama#TopicDetail
-
-A simple way to pass a JSON file is to use a tool like https://github.com/fgeller/jsonify and shell's process substition:
-
-kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)`,
-	ENV_BROKERS)

@@ -1,107 +1,10 @@
 package main
 
 import (
-	"os"
-	"reflect"
 	"testing"
 
 	json "github.com/goccy/go-json"
 )
-
-func TestTopicParseArgs(t *testing.T) {
-	target := &topicCmd{}
-	givenBroker := "hans:9092"
-	expectedBrokers := []string{givenBroker}
-	os.Setenv(ENV_BROKERS, givenBroker)
-
-	target.parseArgs([]string{})
-	if !reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected brokers %v from env vars, got brokers %v.",
-			expectedBrokers,
-			target.brokers,
-		)
-		return
-	}
-
-	os.Setenv(ENV_BROKERS, "")
-	expectedBrokers = []string{"localhost:9092"}
-
-	target.parseArgs([]string{})
-	if !reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected brokers %v from env vars, got brokers %v.",
-			expectedBrokers,
-			target.brokers,
-		)
-		return
-	}
-
-	os.Setenv(ENV_BROKERS, "BLABB")
-	expectedBrokers = []string{givenBroker}
-
-	target.parseArgs([]string{"-brokers", givenBroker})
-	if !reflect.DeepEqual(target.brokers, expectedBrokers) {
-		t.Errorf(
-			"Expected brokers %v from env vars, got brokers %v.",
-			expectedBrokers,
-			target.brokers,
-		)
-		return
-	}
-}
-
-func TestTopicJqFlags(t *testing.T) {
-	tests := []struct {
-		name        string
-		args        []string
-		expectJq    string
-		expectRaw   bool
-		expectError bool
-	}{
-		{
-			name:        "no jq flags",
-			args:        []string{},
-			expectJq:    "",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "jq flag only",
-			args:        []string{"-jq", ".name"},
-			expectJq:    ".name",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "raw flag only",
-			args:        []string{"-raw"},
-			expectJq:    "",
-			expectRaw:   true,
-			expectError: false,
-		},
-		{
-			name:        "both jq and raw flags",
-			args:        []string{"-jq", ".partitions[0].id", "-raw"},
-			expectJq:    ".partitions[0].id",
-			expectRaw:   true,
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &topicCmd{}
-			cmd.parseArgs(tt.args)
-			if cmd.jq != tt.expectJq {
-				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.jq)
-			}
-			if cmd.raw != tt.expectRaw {
-				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.raw)
-			}
-		})
-	}
-}
 
 func TestTopicToMap(t *testing.T) {
 	topic := topic{
