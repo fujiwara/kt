@@ -23,7 +23,7 @@ Some reasons why you might be interested:
 <details><summary>Read details about topics that match a regex</summary>
 
 ```sh
-$ kt topic -filter news -partitions
+$ kt topic --filter news --partitions
 {
   "name": "actor-news",
   "partitions": [
@@ -40,19 +40,19 @@ $ kt topic -filter news -partitions
 <details><summary>Produce messages</summary>
 
 ```sh
-$ echo 'Alice wins Oscar' | kt produce -topic actor-news -literal
+$ echo 'Alice wins Oscar' | kt produce --topic actor-news --literal
 {
   "count": 1,
   "partition": 0,
   "startOffset": 0
 }
-$ echo 'Bob wins Oscar' | kt produce -topic actor-news -literal
+$ echo 'Bob wins Oscar' | kt produce --topic actor-news --literal
 {
   "count": 1,
   "partition": 0,
   "startOffset": 0
 }
-$ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce -topic actor-news -literal ;done
+$ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce --topic actor-news --literal ;done
 {
   "count": 1,
   "partition": 0,
@@ -79,7 +79,7 @@ $ for i in {6..9} ; do echo Bourne sequel $i in production. | kt produce -topic 
 <details><summary>Or pass in JSON object to control key, value and partition</summary>
 
 ```sh
-$ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt produce -topic actor-news
+$ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt produce --topic actor-news
 {
   "count": 1,
   "partition": 0,
@@ -91,7 +91,7 @@ $ echo '{"value": "Terminator terminated", "key": "Arni", "partition": 0}' | kt 
 <details><summary>Read messages at specific offsets on specific partitions</summary>
 
 ```sh
-$ kt consume -topic actor-news -offsets 0=1:2
+$ kt consume --topic actor-news --offsets 0=1:2
 {
   "partition": 0,
   "offset": 1,
@@ -112,7 +112,7 @@ $ kt consume -topic actor-news -offsets 0=1:2
 <details><summary>Follow a topic, starting relative to newest offset</summary>
 
 ```sh
-$ kt consume -topic actor-news -offsets all=newest-1:
+$ kt consume --topic actor-news --offsets all=newest-1:
 {
   "partition": 0,
   "offset": 4,
@@ -136,16 +136,16 @@ shutting down partition consumer for partition 0
 
 ```sh
 # Start from current time (equivalent to newest)
-$ kt consume -topic actor-news -offsets now
+$ kt consume --topic actor-news --offsets now
 
 # Start from specific absolute time (RFC3339 format)
-$ kt consume -topic actor-news -offsets "2023-12-01T15:00:00Z"
+$ kt consume --topic actor-news --offsets "2023-12-01T15:00:00Z"
 
 # Start from 1 hour ago
-$ kt consume -topic actor-news -offsets "-1h"
+$ kt consume --topic actor-news --offsets "-1h"
 
 # Start from 30 minutes in the future
-$ kt consume -topic actor-news -offsets "+30m"
+$ kt consume --topic actor-news --offsets "+30m"
 ```
 </details>
 
@@ -153,17 +153,17 @@ $ kt consume -topic actor-news -offsets "+30m"
 
 ```sh
 # Partition 0 from oldest, others from 1 hour ago
-$ kt consume -topic actor-news -offsets "0=oldest,-1h"
+$ kt consume --topic actor-news --offsets "0=oldest,-1h"
 
 # Specific partitions with absolute timestamp
-$ kt consume -topic actor-news -offsets "1=2023-12-01T15:00:00Z,2=now"
+$ kt consume --topic actor-news --offsets "1=2023-12-01T15:00:00Z,2=now"
 ```
 </details>
 
 <details><summary>View offsets for a given consumer group</summary>
 
 ```sh
-$ kt group -group enews -topic actor-news -partitions 0
+$ kt group --group enews --topic actor-news --partitions 0
 found 1 groups
 found 1 topics
 {
@@ -183,7 +183,7 @@ found 1 topics
 <details><summary>Change consumer group offset</summary>
 
 ```sh
-$ kt group -group enews -topic actor-news -partitions 0 -reset 1
+$ kt group --group enews --topic actor-news --partitions 0 --reset 1
 found 1 groups
 found 1 topics
 {
@@ -197,7 +197,7 @@ found 1 topics
     }
   ]
 }
-$ kt group -group enews -topic actor-news -partitions 0
+$ kt group --group enews --topic actor-news --partitions 0
 found 1 groups
 found 1 topics
 {
@@ -217,13 +217,13 @@ found 1 topics
 <details><summary>Create and delete a topic</summary>
 
 ```sh
-$ kt admin -createtopic morenews -topicdetail <(jsonify =NumPartitions 1 =ReplicationFactor 1)
-$ kt topic -filter news
+$ kt admin --create-topic morenews --topic-detail <(jsonify =NumPartitions 1 =ReplicationFactor 1)
+$ kt topic --filter news
 {
   "name": "morenews"
 }
-$ kt admin -deletetopic morenews
-$ kt topic -filter news
+$ kt admin --delete-topic morenews
+$ kt topic --filter news
 ```
 
 </details>
@@ -257,34 +257,36 @@ $ go install github.com/fujiwara/kt/v14@latest
 
 ## Usage:
 
-    $ kt -help
-    kt is a tool for Kafka.
+    $ kt --help
+    Usage: kt <command> [flags]
 
-    Usage:
+    Flags:
+      -h, --help       Show context-sensitive help.
+      -v, --version    Show version and exit.
 
-            kt command [arguments]
+    Commands:
+      consume [flags]
+        consume messages.
 
-    The commands are:
+      produce [flags]
+        produce messages.
 
-            consume        consume messages.
-            produce        produce messages.
-            topic          topic information.
-            group          consumer group information and modification.
-            admin          basic cluster administration.
+      topic [flags]
+        topic information.
 
-    Use "kt [command] -help" for for information about the command.
+      group [flags]
+        consumer group information and modification.
 
-    Authentication:
+      admin [flags]
+        basic cluster administration.
 
-    Authentication with Kafka can be configured via a JSON file.
-    You can set the file name via an "-auth" flag to each command or
-    set it via the environment variable KT_AUTH.
+    Run "kt <command> --help" for more information on a command.
 
 ## Authentication / Encryption
 
 Authentication configuration is possibly via a JSON file. You indicate the mode
 of authentication you need and provide additional information as required for
-your mode. You pass the path to your configuration file via the `-auth` flag to
+your mode. You pass the path to your configuration file via the `--auth` flag to
 each command individually, or set it via the environment variable `KT_AUTH`.
 
 ### TLS
