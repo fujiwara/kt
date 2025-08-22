@@ -623,3 +623,102 @@ func TestToMapWithJq(t *testing.T) {
 		})
 	}
 }
+
+func TestBaseCmdJqFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		jq          string
+		raw         bool
+		expectJq    string
+		expectRaw   bool
+		expectError bool
+	}{
+		{
+			name:        "no jq flags",
+			jq:          "",
+			raw:         false,
+			expectJq:    "",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "jq flag only",
+			jq:          ".startOffset",
+			raw:         false,
+			expectJq:    ".startOffset",
+			expectRaw:   false,
+			expectError: false,
+		},
+		{
+			name:        "raw flag only",
+			jq:          "",
+			raw:         true,
+			expectJq:    "",
+			expectRaw:   true,
+			expectError: false,
+		},
+		{
+			name:        "both jq and raw flags",
+			jq:          ".partition",
+			raw:         true,
+			expectJq:    ".partition",
+			expectRaw:   true,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &baseCmd{}
+			cmd.Jq = tt.jq
+			cmd.Raw = tt.raw
+			cmd.prepare()
+			if cmd.Jq != tt.expectJq {
+				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.Jq)
+			}
+			if cmd.Raw != tt.expectRaw {
+				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.Raw)
+			}
+		})
+	}
+}
+
+func TestBaseCmdBrokers(t *testing.T) {
+	tests := []struct {
+		name            string
+		brokers         []string
+		expectedBrokers []string
+	}{
+		{
+			name:            "localhost without port",
+			brokers:         []string{"localhost"},
+			expectedBrokers: []string{"localhost:9092"},
+		},
+		{
+			name:            "localhost with port",
+			brokers:         []string{"localhost:9092"},
+			expectedBrokers: []string{"localhost:9092"},
+		},
+		{
+			name:            "multiple brokers mixed",
+			brokers:         []string{"broker1", "broker2:9093"},
+			expectedBrokers: []string{"broker1:9092", "broker2:9093"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &baseCmd{}
+			cmd.Brokers = tt.brokers
+			actual := cmd.addDefaultPorts(cmd.Brokers)
+			if len(actual) != len(tt.expectedBrokers) {
+				t.Errorf("expected %d brokers, got %d", len(tt.expectedBrokers), len(actual))
+			}
+			for i, expected := range tt.expectedBrokers {
+				if i < len(actual) && actual[i] != expected {
+					t.Errorf("expected broker[%d] %s, got %s", i, expected, actual[i])
+				}
+			}
+		})
+	}
+}

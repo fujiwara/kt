@@ -1081,64 +1081,6 @@ func (s *tConsumerGroupSession) MarkMessage(msg *sarama.ConsumerMessage, metadat
 func (s *tConsumerGroupSession) Context() context.Context                                 { return s.ctx }
 func (s *tConsumerGroupSession) Commit()                                                  {}
 
-func TestConsumeJqFlags(t *testing.T) {
-	tests := []struct {
-		name        string
-		args        []string
-		expectJq    string
-		expectRaw   bool
-		expectError bool
-	}{
-		{
-			name:        "no jq flags",
-			args:        []string{"-topic", "test"},
-			expectJq:    "",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "jq flag only",
-			args:        []string{"-topic", "test", "-jq", ".value"},
-			expectJq:    ".value",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "raw flag only",
-			args:        []string{"-topic", "test", "-raw"},
-			expectJq:    "",
-			expectRaw:   true,
-			expectError: false,
-		},
-		{
-			name:        "both jq and raw flags",
-			args:        []string{"-topic", "test", "-jq", ".name", "-raw"},
-			expectJq:    ".name",
-			expectRaw:   true,
-			expectError: false,
-		},
-		{
-			name:        "complex jq expression",
-			args:        []string{"-topic", "test", "-jq", ".value | fromjson | .user_id"},
-			expectJq:    ".value | fromjson | .user_id",
-			expectRaw:   false,
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &consumeCmd{}
-			cmd.parseArgs(tt.args)
-			if cmd.Jq != tt.expectJq {
-				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.Jq)
-			}
-			if cmd.Raw != tt.expectRaw {
-				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.Raw)
-			}
-		})
-	}
-}
 
 func TestConsumedMessageToMap(t *testing.T) {
 	timestamp := time.Date(2023, 12, 1, 15, 0, 0, 0, time.UTC)

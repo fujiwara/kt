@@ -6,66 +6,6 @@ import (
 	json "github.com/goccy/go-json"
 )
 
-func TestGroupJqFlags(t *testing.T) {
-	tests := []struct {
-		name        string
-		jq          string
-		raw         bool
-		expectJq    string
-		expectRaw   bool
-		expectError bool
-	}{
-		{
-			name:        "no_jq_flags",
-			jq:          "",
-			raw:         false,
-			expectJq:    "",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "jq_flag_only",
-			jq:          ".name",
-			raw:         false,
-			expectJq:    ".name",
-			expectRaw:   false,
-			expectError: false,
-		},
-		{
-			name:        "raw_flag_only",
-			jq:          "",
-			raw:         true,
-			expectJq:    "",
-			expectRaw:   true,
-			expectError: false,
-		},
-		{
-			name:        "both_jq_and_raw_flags",
-			jq:          ".offsets[0].partition",
-			raw:         true,
-			expectJq:    ".offsets[0].partition",
-			expectRaw:   true,
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &groupCmd{}
-			cmd.Jq = tt.jq
-			cmd.Raw = tt.raw
-			cmd.Group = "test-group"
-			cmd.Brokers = "localhost:9092"
-			cmd.prepare()
-			if cmd.Jq != tt.expectJq {
-				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.Jq)
-			}
-			if cmd.Raw != tt.expectRaw {
-				t.Errorf("expected raw %v, got %v", tt.expectRaw, cmd.Raw)
-			}
-		})
-	}
-}
 
 func TestGroupToMap(t *testing.T) {
 	offset1 := int64(100)
