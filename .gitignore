@@ -2,6 +2,7 @@
 /quickfix
 .idea/*
 .vscode/*
+.claude/
 
 # Test certificates and keys - generated dynamically
 test-secrets/*.crt
