@@ -80,7 +80,7 @@ func runSystemTest(t *testing.T, config testConfig) {
 
 	runMethod := func(c *cmd, name string, args ...string) (int, string, string) {
 		if config.authFile != "" {
-			args = append(args, "-auth", config.authFile)
+			args = append(args, "--auth", config.authFile)
 		}
 		port := 9092
 		if config.useSSL {
@@ -105,8 +105,8 @@ func runSystemTest(t *testing.T, config testConfig) {
 	defer os.RemoveAll(fnTopicDetail)
 
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "admin",
-		"-createtopic", topicName,
-		"-topicdetail", fnTopicDetail)
+		"--createtopic", topicName,
+		"--topicdetail", fnTopicDetail)
 	fmt.Printf(">> system test kt admin -createtopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -createtopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -125,7 +125,7 @@ func runSystemTest(t *testing.T, config testConfig) {
 	buf, err = json.Marshal(req)
 	require.NoError(t, err)
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "produce",
-		"-topic", topicName)
+		"--topic", topicName)
 	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -144,10 +144,10 @@ func runSystemTest(t *testing.T, config testConfig) {
 	//
 
 	status, stdOut, stdErr = runMethod(newCmd(), "./kt", "consume",
-		"-topic", topicName,
-		"-timeout", "5s",
-		"-offsets", "all=oldest",
-		"-group", config.groupName)
+		"--topic", topicName,
+		"--timeout", "5s",
+		"--offsets", "all=oldest",
+		"--group", config.groupName)
 	fmt.Printf(">> system test kt consume -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -176,7 +176,7 @@ func runSystemTest(t *testing.T, config testConfig) {
 	// kt admin -deletetopic
 	//
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "admin",
-		"-deletetopic", topicName)
+		"--deletetopic", topicName)
 	fmt.Printf(">> system test kt admin -deletetopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -deletetopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -195,9 +195,9 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 	//
 
 	status, stdOut, stdErr = runMethod(newCmd(), "./kt", "consume",
-		"-topic", topicName,
-		"-timeout", "2s",
-		"-offsets", "all=oldest")
+		"--topic", topicName,
+		"--timeout", "2s",
+		"--offsets", "all=oldest")
 	fmt.Printf(">> system test kt consume -topic %v (non-group) stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v (non-group) stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -222,8 +222,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 	//
 
 	status, stdOut, stdErr = runMethod(newCmd(), "./kt", "group",
-		"-verbose",
-		"-topic", topicName)
+		"--verbose",
+		"--topic", topicName)
 	fmt.Printf(">> system test kt group -verbose -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -verbose -topic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -244,7 +244,7 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 	require.NoError(t, err)
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)),
 		"./kt", "produce",
-		"-topic", topicName,
+		"--topic", topicName,
 	)
 	fmt.Printf(">> system test kt produce -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt produce -topic %v stderr:\n%s\n", topicName, stdErr)
@@ -265,10 +265,10 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 
 	status, stdOut, stdErr = runMethod(newCmd(),
 		"./kt", "consume",
-		"-topic", topicName,
-		"-offsets", "all=resume",
-		"-timeout", "5s",
-		"-group", config.groupName,
+		"--topic", topicName,
+		"--offsets", "all=resume",
+		"--timeout", "5s",
+		"--group", config.groupName,
 	)
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt consume -topic %v -offsets all=resume stderr:\n%s\n", topicName, stdErr)
@@ -294,11 +294,11 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 
 	status, stdOut, stdErr = runMethod(newCmd(),
 		"./kt", "group",
-		"-verbose",
-		"-topic", topicName,
-		"-partitions", "0",
-		"-group", config.groupName,
-		"-reset", "0",
+		"--verbose",
+		"--topic", topicName,
+		"--partitions", "0",
+		"--group", config.groupName,
+		"--reset", "0",
 	)
 	fmt.Printf(">> system test kt group -verbose -topic %v -partitions 0 -group %s -reset 0 stdout:\n%s\n", topicName, config.groupName, stdOut)
 	fmt.Printf(">> system test kt group -verbose -topic %v -partitions 0 -group %s -reset 0  stderr:\n%s\n", topicName, config.groupName, stdErr)
@@ -325,8 +325,8 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 
 	status, stdOut, stdErr = runMethod(newCmd(),
 		"./kt", "group",
-		"-verbose",
-		"-topic", topicName,
+		"--verbose",
+		"--topic", topicName,
 	)
 	fmt.Printf(">> system test kt group -verbose -topic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt group -verbose -topic %v stderr:\n%s\n", topicName, stdErr)
@@ -341,7 +341,7 @@ func runFullSystemTest(t *testing.T, config testConfig, topicName string, runMet
 
 	status, stdOut, stdErr = runMethod(newCmd(),
 		"./kt", "topic",
-		"-filter", topicName,
+		"--filter", topicName,
 	)
 	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
 	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
@@ -378,7 +378,7 @@ func TestSystem(t *testing.T) {
 	runSystemTest(t, config)
 
 	// Test final topic verification after delete
-	status, stdOut, stdErr := newCmd().run("./kt", "topic", "-filter", "kt-test-nonexistent")
+	status, stdOut, stdErr := newCmd().run("./kt", "topic", "--filter", "kt-test-nonexistent")
 	fmt.Printf(">> system test kt topic stdout:\n%s\n", stdOut)
 	fmt.Printf(">> system test kt topic stderr:\n%s\n", stdErr)
 	require.Zero(t, status)
