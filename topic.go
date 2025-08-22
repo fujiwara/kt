@@ -105,8 +105,6 @@ func (cmd *topicCmd) prepare() {
 	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
 	}
-
-	// Kafka version is now handled by baseCmd.prepare()
 }
 
 func (cmd *topicCmd) connect() {
@@ -128,7 +126,6 @@ func (cmd *topicCmd) connect() {
 		failf("failed to setup auth err=%v", err)
 	}
 
-	// Add default port if not specified using common method
 	brokers := cmd.addDefaultPorts(cmd.Brokers)
 
 	if cmd.client, err = sarama.NewClient(brokers, cfg); err != nil {

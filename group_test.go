@@ -9,35 +9,40 @@ import (
 func TestGroupJqFlags(t *testing.T) {
 	tests := []struct {
 		name        string
-		args        []string
+		jq          string
+		raw         bool
 		expectJq    string
 		expectRaw   bool
 		expectError bool
 	}{
 		{
-			name:        "no jq flags",
-			args:        []string{"-group", "test-group"},
+			name:        "no_jq_flags",
+			jq:          "",
+			raw:         false,
 			expectJq:    "",
 			expectRaw:   false,
 			expectError: false,
 		},
 		{
-			name:        "jq flag only",
-			args:        []string{"-group", "test-group", "-jq", ".name"},
+			name:        "jq_flag_only",
+			jq:          ".name",
+			raw:         false,
 			expectJq:    ".name",
 			expectRaw:   false,
 			expectError: false,
 		},
 		{
-			name:        "raw flag only",
-			args:        []string{"-group", "test-group", "-raw"},
+			name:        "raw_flag_only",
+			jq:          "",
+			raw:         true,
 			expectJq:    "",
 			expectRaw:   true,
 			expectError: false,
 		},
 		{
-			name:        "both jq and raw flags",
-			args:        []string{"-group", "test-group", "-jq", ".offsets[0].partition", "-raw"},
+			name:        "both_jq_and_raw_flags",
+			jq:          ".offsets[0].partition",
+			raw:         true,
 			expectJq:    ".offsets[0].partition",
 			expectRaw:   true,
 			expectError: false,
@@ -47,7 +52,11 @@ func TestGroupJqFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &groupCmd{}
-			cmd.parseArgs(tt.args)
+			cmd.Jq = tt.jq
+			cmd.Raw = tt.raw
+			cmd.Group = "test-group"
+			cmd.Brokers = "localhost:9092"
+			cmd.prepare()
 			if cmd.Jq != tt.expectJq {
 				t.Errorf("expected jq %q, got %q", tt.expectJq, cmd.Jq)
 			}

@@ -81,6 +81,8 @@ func main() {
 		cli.Topic.run()
 	case "admin":
 		cli.Admin.run()
+	case "group":
+		cli.Group.run()
 	default:
 		mainLegacy(os.Args)
 	}
@@ -113,7 +115,8 @@ func mainLegacy(args []string) {
 		// cmd = &topicCmd{}
 		failf("xxx")
 	case "group":
-		cmd = &groupCmd{}
+		// cmd = &groupCmd{}
+		failf("group command is now handled by Kong")
 	case "admin":
 		// cmd = &adminCmd{}
 		failf("admin command is now handled by Kong")
