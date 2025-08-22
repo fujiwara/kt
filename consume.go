@@ -99,7 +99,7 @@ func (h *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 			}
 
 			m := newConsumedMessage(msg, h.cmd.encodeKey, h.cmd.encodeValue)
-			ctx := printContext{output: m, done: make(chan struct{})}
+			ctx := printContext{output: m, done: make(chan struct{}), cmd: h.cmd.baseCmd}
 
 			select {
 			case h.out <- ctx:
@@ -243,6 +243,8 @@ type consumeArgs struct {
 	encodeKey   string
 	pretty      bool
 	group       string
+	jq          string
+	raw         bool
 }
 
 func (cmd *consumeCmd) failStartup(msg string) {
@@ -269,6 +271,11 @@ func (cmd *consumeCmd) parseArgs(as []string) {
 	cmd.verbose = args.verbose
 	cmd.pretty = args.pretty
 	cmd.group = args.group
+	cmd.jq = args.jq
+	cmd.raw = args.raw
+	if err := cmd.prepare(); err != nil {
+		failf("failed to prepare jq query err=%v", err)
+	}
 
 	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
 	if err != nil {
@@ -571,6 +578,8 @@ func (cmd *consumeCmd) parseFlags(as []string) consumeArgs {
 	flags.StringVar(&args.encodeKey, "encodekey", "string", "Present message key as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.group, "group", "", "Consumer group to use for marking offsets. kt will mark offsets if this arg is supplied.")
 	flags.StringVar(&args.until, "until", "", "Stop consuming when message timestamp reaches this time. Supports 'now', RFC3339 absolute time (2006-01-02T15:04:05Z07:00), or relative duration from now (+5m, +1h, -30m).")
+	flags.StringVar(&args.jq, "jq", "", "Apply jq filter to output (e.g., '.value | fromjson | .field').")
+	flags.BoolVar(&args.raw, "raw", false, "Output raw strings without JSON encoding (like jq -r).")
 
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of consume:")
@@ -842,6 +851,19 @@ type consumedMessage struct {
 	Timestamp *time.Time `json:"timestamp,omitempty"`
 }
 
+func (c consumedMessage) ToMap() map[string]any {
+	m := map[string]any{
+		"partition": c.Partition,
+		"offset":    c.Offset,
+		"key":       ptrToValue(c.Key),
+		"value":     ptrToValue(c.Value),
+	}
+	if c.Timestamp != nil {
+		m["timestamp"] = c.Timestamp.Format(time.RFC3339Nano)
+	}
+	return m
+}
+
 func newConsumedMessage(m *sarama.ConsumerMessage, encodeKey, encodeValue string) consumedMessage {
 	result := consumedMessage{
 		Partition: m.Partition,
@@ -960,7 +982,7 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			}
 
 			m := newConsumedMessage(msg, cmd.encodeKey, cmd.encodeValue)
-			ctx := printContext{output: m, done: make(chan struct{})}
+			ctx := printContext{output: m, done: make(chan struct{}), cmd: cmd.baseCmd}
 			out <- ctx
 			<-ctx.done
 

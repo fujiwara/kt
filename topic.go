@@ -24,6 +24,8 @@ type topicArgs struct {
 	verbose    bool
 	pretty     bool
 	version    string
+	jq         string
+	raw        bool
 }
 
 type topicCmd struct {
@@ -49,6 +51,23 @@ type topic struct {
 	Config     map[string]string `json:"config,omitempty"`
 }
 
+func (t topic) ToMap() map[string]any {
+	ps := make([]any, 0, len(t.Partitions))
+	for _, p := range t.Partitions {
+		ps = append(ps, p.ToMap())
+	}
+	m := map[string]any{
+		"name": t.Name,
+	}
+	if len(t.Partitions) > 0 {
+		m["partitions"] = ps
+	}
+	if len(t.Config) > 0 {
+		m["config"] = t.Config
+	}
+	return m
+}
+
 type partition struct {
 	Id           int32   `json:"id"`
 	OldestOffset int64   `json:"oldest"`
@@ -56,6 +75,32 @@ type partition struct {
 	Leader       string  `json:"leader,omitempty"`
 	Replicas     []int32 `json:"replicas,omitempty"`
 	ISRs         []int32 `json:"isrs,omitempty"`
+}
+
+func (p partition) ToMap() map[string]any {
+	m := map[string]any{
+		"id":     p.Id,
+		"oldest": p.OldestOffset,
+		"newest": p.NewestOffset,
+	}
+	if p.Leader != "" {
+		m["leader"] = p.Leader
+	}
+	if len(p.Replicas) > 0 {
+		replicas := make([]any, len(p.Replicas))
+		for i, r := range p.Replicas {
+			replicas[i] = r
+		}
+		m["replicas"] = replicas
+	}
+	if len(p.ISRs) > 0 {
+		isrs := make([]any, len(p.ISRs))
+		for i, isr := range p.ISRs {
+			isrs[i] = isr
+		}
+		m["isrs"] = isrs
+	}
+	return m
 }
 
 func (cmd *topicCmd) parseFlags(as []string) topicArgs {
@@ -74,6 +119,8 @@ func (cmd *topicCmd) parseFlags(as []string) topicArgs {
 	flags.BoolVar(&args.verbose, "verbose", false, "More verbose logging to stderr.")
 	flags.BoolVar(&args.pretty, "pretty", true, "Control output pretty printing.")
 	flags.StringVar(&args.version, "version", "", "Kafka protocol version")
+	flags.StringVar(&args.jq, "jq", "", "Apply jq filter to output (e.g., '.name').")
+	flags.BoolVar(&args.raw, "raw", false, "Output raw strings without JSON encoding (like jq -r).")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of topic:")
 		flags.PrintDefaults()
@@ -125,6 +172,11 @@ func (cmd *topicCmd) parseArgs(as []string) {
 	cmd.config = args.config
 	cmd.pretty = args.pretty
 	cmd.verbose = args.verbose
+	cmd.jq = args.jq
+	cmd.raw = args.raw
+	if err := cmd.prepare(); err != nil {
+		failf("failed to prepare jq query err=%v", err)
+	}
 
 	cmd.version, err = chooseKafkaVersion(args.version, os.Getenv(ENV_KAFKA_VERSION))
 	if err != nil {
@@ -210,7 +262,7 @@ func (cmd *topicCmd) print(name string, out chan printContext) {
 		return
 	}
 
-	ctx := printContext{output: top, done: make(chan struct{})}
+	ctx := printContext{output: top, done: make(chan struct{}), cmd: cmd.baseCmd}
 	out <- ctx
 	<-ctx.done
 }

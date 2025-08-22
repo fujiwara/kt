@@ -34,6 +34,8 @@ type produceArgs struct {
 	decodeValue string
 	partitioner string
 	bufferSize  int
+	jq          string
+	raw         bool
 }
 
 type message struct {
@@ -61,6 +63,8 @@ func (cmd *produceCmd) read(as []string) produceArgs {
 	flags.StringVar(&args.decodeKey, "decodekey", "string", "Decode message value as (string|hex|base64), defaults to string.")
 	flags.StringVar(&args.decodeValue, "decodevalue", "string", "Decode message value as (string|hex|base64), defaults to string.")
 	flags.IntVar(&args.bufferSize, "buffersize", 16777216, "Buffer size for scanning stdin, defaults to 16777216=16*1024*1024.")
+	flags.StringVar(&args.jq, "jq", "", "Apply jq filter to output (e.g., '.value | fromjson | .field').")
+	flags.BoolVar(&args.raw, "raw", false, "Output raw strings without JSON encoding (like jq -r).")
 
 	flags.Usage = func() {
 		warnf("Usage of produce:")
@@ -130,6 +134,12 @@ func (cmd *produceCmd) parseArgs(as []string) {
 	cmd.pretty = args.pretty
 	cmd.quiet = args.quiet
 	cmd.literal = args.literal
+	cmd.jq = args.jq
+	cmd.raw = args.raw
+	if err := cmd.prepare(); err != nil {
+		failf("failed to prepare jq query err=%v", err)
+	}
+
 	cmd.partition = int32(args.partition)
 	cmd.partitioner = args.partitioner
 
@@ -477,8 +487,8 @@ func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []me
 		}
 
 		for p, o := range offsets {
-			result := map[string]interface{}{"partition": p, "startOffset": o.start, "count": o.count}
-			ctx := printContext{output: result, done: make(chan struct{})}
+			result := mapObject(map[string]any{"partition": p, "startOffset": o.start, "count": o.count})
+			ctx := printContext{output: result, done: make(chan struct{}), cmd: cmd.baseCmd}
 			out <- ctx
 			<-ctx.done
 		}

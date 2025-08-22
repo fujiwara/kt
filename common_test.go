@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	json "github.com/goccy/go-json"
+
 	"github.com/IBM/sarama"
-	"github.com/stretchr/testify/require"
 )
 
 func TestChooseKafkaVersion(t *testing.T) {
@@ -42,10 +45,16 @@ func TestChooseKafkaVersion(t *testing.T) {
 	for tn, tc := range td {
 		actual, err := chooseKafkaVersion(tc.arg, tc.env)
 		if tc.err == nil {
-			require.Equal(t, tc.expected, actual, tn)
-			require.NoError(t, err)
+			if actual != tc.expected {
+				t.Errorf("%s: expected %v, got %v", tn, tc.expected, actual)
+			}
+			if err != nil {
+				t.Errorf("%s: expected no error, got %v", tn, err)
+			}
 		} else {
-			require.Equal(t, tc.err, err)
+			if err == nil || err.Error() != tc.err.Error() {
+				t.Errorf("%s: expected error %v, got %v", tn, tc.err, err)
+			}
 		}
 	}
 }
@@ -126,6 +135,495 @@ func TestParseTimeString(t *testing.T) {
 				if !result.Before(now) {
 					t.Errorf("Negative relative time %q should be before now (%v), got %v", d.input, now, result)
 				}
+			}
+		})
+	}
+}
+
+func TestApplyJqFilter(t *testing.T) {
+	tests := []struct {
+		name     string
+		query    string
+		input    object
+		expected interface{}
+		multi    bool
+		wantErr  bool
+	}{
+		{
+			name:     "extract simple field",
+			query:    ".name",
+			input:    mapObject{"name": "test-topic", "partition": 0},
+			expected: "test-topic",
+		},
+		{
+			name:     "extract nested field",
+			query:    ".config.retention",
+			input:    mapObject{"name": "test", "config": map[string]interface{}{"retention": "7d"}},
+			expected: "7d",
+		},
+		{
+			name:     "extract array element",
+			query:    ".partitions[0]",
+			input:    mapObject{"partitions": []interface{}{10, 20, 30}},
+			expected: 10,
+		},
+		{
+			name:     "extract with fromjson",
+			query:    ".value | fromjson | .user_id",
+			input:    mapObject{"value": `{"user_id": 123, "action": "purchase"}`},
+			expected: 123,
+		},
+		{
+			name:     "string interpolation",
+			query:    `"\(.partition):\(.offset)"`,
+			input:    mapObject{"partition": 0, "offset": 42},
+			expected: "0:42",
+		},
+		{
+			name:     "extract array elements",
+			query:    ".value[]",
+			input:    mapObject{"value": []any{1, 2, 3}},
+			expected: []any{1, 2, 3},
+			multi:    true,
+		},
+		{
+			name:     "filter non-existent field returns null",
+			query:    ".nonexistent",
+			input:    mapObject{"name": "test"},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := baseCmd{jq: tt.query}
+			if err := cmd.prepare(); err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			result, multi, err := applyJqFilter(cmd.jqQuery, tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error for input %+v, but got none", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error for input %+v: %v", tt.input, err)
+				return
+			}
+			// Special handling for fromjson test case where numbers might be float64
+			if tt.name == "extract with fromjson" {
+				// Allow both int and float64 for JSON numbers
+				if result, ok := result.(float64); ok && int(result) == tt.expected.(int) {
+					return // Test passes
+				}
+			}
+			if tt.multi != multi {
+				t.Error("multiple results expected")
+			}
+			if !reflect.DeepEqual(tt.expected, result) {
+				t.Errorf("expected %v (type %T), got %v (type %T)", tt.expected, tt.expected, result, result)
+			}
+		})
+	}
+}
+
+func TestPrint(t *testing.T) {
+	// Save original stdoutWriter
+	originalStdout := stdoutWriter
+	defer func() { stdoutWriter = originalStdout }()
+
+	tests := []struct {
+		name     string
+		query    string
+		input    object
+		raw      bool
+		expected string
+	}{
+		{
+			name:     "normal JSON output",
+			query:    "",
+			input:    mapObject{"name": "test", "value": 42},
+			raw:      false,
+			expected: `{"name":"test","value":42}` + "\n",
+		},
+		{
+			name:     "raw string output",
+			query:    ".name",
+			input:    mapObject{"name": "test", "value": 42},
+			raw:      true,
+			expected: "test\n",
+		},
+		{
+			name:     "raw number as JSON",
+			query:    ".value",
+			input:    mapObject{"name": "test", "value": 42},
+			raw:      false,
+			expected: "42\n",
+		},
+		{
+			name:     "jq filter with JSON output",
+			query:    ".name",
+			input:    mapObject{"name": "test", "value": 42},
+			raw:      false,
+			expected: `"test"` + "\n",
+		},
+		{
+			name:     "complex jq with raw output",
+			query:    `"\(.name):\(.value)"`,
+			input:    mapObject{"name": "topic", "value": 123},
+			raw:      true,
+			expected: "topic:123\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture output
+			var buf bytes.Buffer
+			stdoutWriter = &buf
+			cmd := baseCmd{jq: tt.query, raw: tt.raw}
+			if err := cmd.prepare(); err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			// Create print context channel
+			in := make(chan printContext, 1)
+			done := make(chan struct{})
+			// Start print goroutine
+			go func() {
+				print(in, false) // Use false for pretty to get consistent output
+			}()
+
+			// Send test data to print function
+			ctx := printContext{
+				output: tt.input,
+				done:   done,
+				cmd:    cmd,
+			}
+			in <- ctx
+			<-done // Wait for processing to complete
+
+			if buf.String() != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, buf.String())
+			}
+		})
+	}
+}
+
+func TestPrintOutput(t *testing.T) {
+	// Save original stdoutWriter
+	originalStdout := stdoutWriter
+	defer func() { stdoutWriter = originalStdout }()
+
+	tests := []struct {
+		name     string
+		input    any
+		raw      bool
+		expected string
+	}{
+		{
+			name:     "string with raw=true",
+			input:    "test string",
+			raw:      true,
+			expected: "test string\n",
+		},
+		{
+			name:     "string with raw=false",
+			input:    "test string",
+			raw:      false,
+			expected: `"test string"` + "\n",
+		},
+		{
+			name:     "number with raw=false",
+			input:    42,
+			raw:      false,
+			expected: "42\n",
+		},
+		{
+			name:     "object with raw=false",
+			input:    map[string]any{"key": "value"},
+			raw:      false,
+			expected: `{"key":"value"}` + "\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture output
+			var buf bytes.Buffer
+			stdoutWriter = &buf
+
+			marshal := json.Marshal
+			printOutput(tt.input, marshal, tt.raw)
+
+			if buf.String() != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, buf.String())
+			}
+		})
+	}
+}
+
+// Test that ToMap results are equivalent to JSON conversion
+func TestToMapEquivalence(t *testing.T) {
+	tests := []struct {
+		name   string
+		object object
+	}{
+		{
+			name: "consumedMessage with all fields",
+			object: func() object {
+				timestamp := time.Date(2023, 12, 1, 15, 0, 0, 0, time.UTC)
+				key := "test-key"
+				value := "test-value"
+				return consumedMessage{
+					Partition: 0,
+					Offset:    42,
+					Key:       &key,
+					Value:     &value,
+					Timestamp: &timestamp,
+				}
+			}(),
+		},
+		{
+			name: "consumedMessage with nil fields",
+			object: consumedMessage{
+				Partition: 1,
+				Offset:    100,
+				Key:       nil,
+				Value:     nil,
+				Timestamp: nil,
+			},
+		},
+		{
+			name: "topic with partitions and config",
+			object: topic{
+				Name: "test-topic",
+				Partitions: []partition{
+					{Id: 0, OldestOffset: 100, NewestOffset: 200, Leader: "1", Replicas: []int32{1, 2}, ISRs: []int32{1, 2}},
+					{Id: 1, OldestOffset: 150, NewestOffset: 250, Leader: "2", Replicas: []int32{2, 3}, ISRs: []int32{2}},
+				},
+				Config: map[string]string{"retention.ms": "604800000"},
+			},
+		},
+		{
+			name: "topic with no partitions",
+			object: topic{
+				Name:       "empty-topic",
+				Partitions: []partition{},
+				Config:     map[string]string{},
+			},
+		},
+		{
+			name: "group with offsets",
+			object: func() object {
+				offset1 := int64(100)
+				lag1 := int64(10)
+				offset2 := int64(200)
+				lag2 := int64(20)
+				return group{
+					Name:  "test-group",
+					Topic: "test-topic",
+					Offsets: []groupOffset{
+						{Partition: 0, Offset: &offset1, Lag: &lag1},
+						{Partition: 1, Offset: &offset2, Lag: &lag2},
+					},
+				}
+			}(),
+		},
+		{
+			name: "group with nil offsets",
+			object: group{
+				Name:  "test-group",
+				Topic: "test-topic",
+				Offsets: []groupOffset{
+					{Partition: 0, Offset: nil, Lag: nil},
+					{Partition: 1, Offset: nil, Lag: nil},
+				},
+			},
+		},
+		{
+			name: "group with no offsets",
+			object: group{
+				Name:    "empty-group",
+				Topic:   "",
+				Offsets: []groupOffset{},
+			},
+		},
+		{
+			name: "partition",
+			object: partition{
+				Id:           0,
+				OldestOffset: 100,
+				NewestOffset: 200,
+				Leader:       "1",
+				Replicas:     []int32{1, 2, 3},
+				ISRs:         []int32{1, 2},
+			},
+		},
+		{
+			name: "groupOffset with values",
+			object: func() object {
+				offset := int64(100)
+				lag := int64(10)
+				return groupOffset{
+					Partition: 0,
+					Offset:    &offset,
+					Lag:       &lag,
+				}
+			}(),
+		},
+		{
+			name: "groupOffset with nil values",
+			object: groupOffset{
+				Partition: 1,
+				Offset:    nil,
+				Lag:       nil,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Get ToMap result
+			toMapResult := tt.object.ToMap()
+
+			// Marshal original object to JSON then unmarshal
+			originalJSON, err := json.Marshal(tt.object)
+			if err != nil {
+				t.Fatalf("failed to marshal original object: %v", err)
+			}
+
+			var jsonResult map[string]any
+			err = json.Unmarshal(originalJSON, &jsonResult)
+			if err != nil {
+				t.Fatalf("failed to unmarshal to map: %v", err)
+			}
+
+			// Compare both results as JSON (to normalize field order)
+			toMapJSON, err := json.Marshal(toMapResult)
+			if err != nil {
+				t.Fatalf("failed to marshal ToMap result: %v", err)
+			}
+
+			jsonResultJSON, err := json.Marshal(jsonResult)
+			if err != nil {
+				t.Fatalf("failed to marshal JSON result: %v", err)
+			}
+
+			if string(toMapJSON) != string(jsonResultJSON) {
+				t.Errorf("ToMap result differs from JSON conversion:\nToMap:    %s\nJSON:     %s",
+					string(toMapJSON), string(jsonResultJSON))
+
+				// Add debug information
+				t.Logf("Original object: %+v", tt.object)
+				t.Logf("ToMap result: %+v", toMapResult)
+				t.Logf("JSON result: %+v", jsonResult)
+			}
+		})
+	}
+}
+
+// Test that ToMap results can be properly processed by jq
+func TestToMapWithJq(t *testing.T) {
+	tests := []struct {
+		name     string
+		object   object
+		jqQuery  string
+		expected any
+	}{
+		{
+			name: "extract message partition",
+			object: consumedMessage{
+				Partition: 5,
+				Offset:    42,
+				Key:       nil,
+				Value:     nil,
+				Timestamp: nil,
+			},
+			jqQuery:  ".partition",
+			expected: 5,
+		},
+		{
+			name: "extract topic name",
+			object: topic{
+				Name:       "my-topic",
+				Partitions: []partition{},
+				Config:     map[string]string{},
+			},
+			jqQuery:  ".name",
+			expected: "my-topic",
+		},
+		{
+			name: "extract group name",
+			object: group{
+				Name:    "my-group",
+				Topic:   "my-topic",
+				Offsets: []groupOffset{},
+			},
+			jqQuery:  ".name",
+			expected: "my-group",
+		},
+		{
+			name: "extract partition leader",
+			object: partition{
+				Id:           0,
+				OldestOffset: 100,
+				NewestOffset: 200,
+				Leader:       "broker-1",
+				Replicas:     []int32{1, 2},
+				ISRs:         []int32{1},
+			},
+			jqQuery:  ".leader",
+			expected: "broker-1",
+		},
+		{
+			name: "extract first replica",
+			object: partition{
+				Id:           0,
+				OldestOffset: 100,
+				NewestOffset: 200,
+				Leader:       "broker-1",
+				Replicas:     []int32{1, 2, 3},
+				ISRs:         []int32{1},
+			},
+			jqQuery:  ".replicas[0]",
+			expected: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Prepare jq query
+			cmd := baseCmd{jq: tt.jqQuery}
+			if err := cmd.prepare(); err != nil {
+				t.Fatalf("failed to prepare jq query: %v", err)
+			}
+
+			// Apply jq filter to ToMap result
+			result, multi, err := applyJqFilter(cmd.jqQuery, tt.object)
+			if err != nil {
+				t.Fatalf("jq filter failed: %v", err)
+			}
+
+			if multi {
+				t.Errorf("expected single result, got multiple")
+				return
+			}
+
+			// Handle type conversion when needed (JSON numbers become float64)
+			if expectedInt, ok := tt.expected.(int); ok {
+				if resultFloat, ok := result.(float64); ok && int(resultFloat) == expectedInt {
+					return // Test passes
+				}
+			}
+
+			if result != tt.expected {
+				t.Errorf("expected %v (type %T), got %v (type %T)",
+					tt.expected, tt.expected, result, result)
 			}
 		})
 	}
