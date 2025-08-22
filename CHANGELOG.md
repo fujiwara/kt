@@ -1,5 +1,11 @@
 # Changelog
 
+## [v15.0.0](https://github.com/fujiwara/kt/compare/v14.2.0...v15.0.0) - 2025-08-22
+- Migrate CLI from flag package to Kong by @fujiwara in https://github.com/fujiwara/kt/pull/21
+- Improve error handling by @fujiwara in https://github.com/fujiwara/kt/pull/23
+- Update README documentation with missing features and examples by @fujiwara in https://github.com/fujiwara/kt/pull/24
+- Fix missing randomString function in system_test.go by @fujiwara in https://github.com/fujiwara/kt/pull/25
+
 ## [v14.2.0](https://github.com/fujiwara/kt/compare/v14.1.0...v14.2.0) - 2025-08-22
 - Add jq filtering support with -jq and -raw flags by @fujiwara in https://github.com/fujiwara/kt/pull/20
 
