@@ -22,12 +22,12 @@ type consumeCmd struct {
 	sync.Mutex
 	baseCmd
 
-	Topic       string        `help:"Topic to consume." env:"KT_TOPIC"`
+	Topic       string        `help:"Topic to consume." env:"KT_TOPIC" required:""`
 	Offsets     string        `help:"Specifies what messages to read by partition and offset range." default:""`
 	Timeout     time.Duration `help:"Timeout after not reading messages." default:"0"`
 	Until       string        `help:"Stop consuming when message timestamp reaches this time." default:""`
-	EncodeValue string        `help:"Present message value as (string|hex|base64)." default:"string"`
-	EncodeKey   string        `help:"Present message key as (string|hex|base64)." default:"string"`
+	EncodeValue string        `help:"Present message value as (string|hex|base64)." default:"string" enum:"string,hex,base64"`
+	EncodeKey   string        `help:"Present message key as (string|hex|base64)." default:"string" enum:"string,hex,base64"`
 	Group       string        `help:"Consumer group to use for marking offsets." default:""`
 
 	offsets       map[int32]interval
@@ -227,19 +227,9 @@ type interval struct {
 	end   offset
 }
 
-
-func (cmd *consumeCmd) failStartup(msg string) {
-	warnf(msg)
-	failf("use \"kt consume --help\" for more information")
-}
-
 func (cmd *consumeCmd) prepare() {
 	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
-	}
-
-	if cmd.Topic == "" {
-		cmd.failStartup("Topic name is required.")
 	}
 
 	var err error
@@ -251,26 +241,17 @@ func (cmd *consumeCmd) prepare() {
 	if cmd.Until != "" {
 		cmd.until, err = parseUntilTime(cmd.Until)
 		if err != nil {
-			cmd.failStartup(fmt.Sprintf("failed to parse until time: %v", err))
+			failf("failed to parse until time: %v", err)
 		}
 	}
 
 	readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth)
 
-	if cmd.EncodeValue != "string" && cmd.EncodeValue != "hex" && cmd.EncodeValue != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported encodevalue argument %#v, only string, hex and base64 are supported.`, cmd.EncodeValue))
-	}
-
-	if cmd.EncodeKey != "string" && cmd.EncodeKey != "hex" && cmd.EncodeKey != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported encodekey argument %#v, only string, hex and base64 are supported.`, cmd.EncodeKey))
-	}
-
 	cmd.offsets, err = parseOffsets(cmd.Offsets)
 	if err != nil {
-		cmd.failStartup(fmt.Sprintf("%s", err))
+		failf("%s", err)
 	}
 }
-
 
 // parseOffsets parses a set of partition-offset specifiers in the following
 // syntax. The grammar uses the BNF-like syntax defined in https://golang.org/ref/spec.
@@ -509,7 +490,6 @@ func newestOffset() offset {
 func lastOffset() offset {
 	return offset{relative: false, start: 1<<63 - 1}
 }
-
 
 func (cmd *consumeCmd) setupClient() {
 	var (

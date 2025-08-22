@@ -349,11 +349,6 @@ func (cmd *groupCmd) saramaConfig() *sarama.Config {
 	return cfg
 }
 
-func (cmd *groupCmd) failStartup(msg string) {
-	warnf(msg)
-	failf("use \"kt group --help\" for more information")
-}
-
 func (cmd *groupCmd) prepare() {
 	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
@@ -406,7 +401,7 @@ func (cmd *groupCmd) prepare() {
 		}
 		if err != nil {
 			warnf("failed to parse set %#v err=%v", cmd.Reset, err)
-			cmd.failStartup(fmt.Sprintf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h). `, cmd.Reset))
+			failf(`set value %#v not valid. either "newest", "oldest", a time, or a specific offset expected. Supported time formats: "now", RFC3339 (2006-01-02T15:04:05Z07:00), or relative duration (+5m, -1h). `, cmd.Reset)
 		}
 	}
 }

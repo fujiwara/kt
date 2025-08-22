@@ -21,28 +21,9 @@ type message struct {
 	Partition *int32  `json:"partition"`
 }
 
-func (cmd *produceCmd) failStartup(msg string) {
-	warnf(msg)
-	failf("use \"kt produce --help\" for more information")
-}
-
 func (cmd *produceCmd) prepare() {
 	if err := cmd.baseCmd.prepare(); err != nil {
 		failf("failed to prepare jq query err=%v", err)
-	}
-
-	if cmd.Topic == "" {
-		cmd.failStartup("Topic name is required.")
-	}
-
-	if cmd.DecodeValue != "" && cmd.DecodeValue != "string" && cmd.DecodeValue != "hex" && cmd.DecodeValue != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodevalue argument %#v, only string, hex and base64 are supported.`, cmd.DecodeValue))
-		return
-	}
-
-	if cmd.DecodeKey != "" && cmd.DecodeKey != "string" && cmd.DecodeKey != "hex" && cmd.DecodeKey != "base64" {
-		cmd.failStartup(fmt.Sprintf(`unsupported decodekey argument %#v, only string, hex and base64 are supported.`, cmd.DecodeKey))
-		return
 	}
 
 	cmd.compression = kafkaCompression(cmd.Compression)
@@ -141,7 +122,7 @@ loop:
 type produceCmd struct {
 	baseCmd
 
-	Topic       string        `help:"Topic to produce to." env:"KT_TOPIC"`
+	Topic       string        `help:"Topic to produce to." env:"KT_TOPIC" required:""`
 	Partition   int32         `help:"Partition to produce to" default:"0"`
 	Batch       int           `help:"Batch size" default:"1"`
 	Timeout     time.Duration `help:"Timeout for request to Kafka" default:"5s"`
@@ -149,8 +130,8 @@ type produceCmd struct {
 	Literal     bool          `help:"Interpret stdin line literally and pass it as value, key as null"`
 	Compression string        `help:"Compression codec to use (gzip, snappy, lz4)" default:""`
 	Partitioner string        `help:"Partitioner to use (hashCode, hashCodeByValue)" default:""`
-	DecodeKey   string        `help:"Decode message key (string, hex, base64)" default:"string"`
-	DecodeValue string        `help:"Decode message value (string, hex, base64)" default:"string"`
+	DecodeKey   string        `help:"Decode message key (string, hex, base64)" default:"string" enum:"string,hex,base64"`
+	DecodeValue string        `help:"Decode message value (string, hex, base64)" default:"string" enum:"string,hex,base64"`
 	BufferSize  int           `help:"Buffer size for producer" default:"8192"`
 
 	compression sarama.CompressionCodec
