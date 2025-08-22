@@ -65,7 +65,11 @@ func (cmd *adminCmd) run() error {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cmd.saramaConfig()); err != nil {
+	cfg, err := cmd.saramaConfig()
+	if err != nil {
+		return err
+	}
+	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cfg); err != nil {
 		return fmt.Errorf("failed to create cluster admin err=%v", err)
 	}
 
@@ -94,7 +98,7 @@ func (cmd *adminCmd) runDeleteTopic() error {
 	return nil
 }
 
-func (cmd *adminCmd) saramaConfig() *sarama.Config {
+func (cmd *adminCmd) saramaConfig() (*sarama.Config, error) {
 	var (
 		err error
 		usr *user.User
@@ -113,8 +117,8 @@ func (cmd *adminCmd) saramaConfig() *sarama.Config {
 	}
 
 	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
-		failf("failed to setup auth err=%v", err)
+		return nil, fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
-	return cfg
+	return cfg, nil
 }

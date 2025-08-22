@@ -245,7 +245,9 @@ func (cmd *consumeCmd) prepare() error {
 		}
 	}
 
-	readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth)
+	if err = readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth); err != nil {
+		return err
+	}
 
 	cmd.offsets, err = parseOffsets(cmd.Offsets)
 	if err != nil {
@@ -492,7 +494,7 @@ func lastOffset() offset {
 	return offset{relative: false, start: 1<<63 - 1}
 }
 
-func (cmd *consumeCmd) setupClient() {
+func (cmd *consumeCmd) setupClient() error {
 	var (
 		err error
 		usr *user.User
@@ -529,12 +531,13 @@ func (cmd *consumeCmd) setupClient() {
 	cmd.infof("sarama client configuration %#v\n", cfg)
 
 	if err = setupAuth(cmd.auth, cfg); err != nil {
-		failf("failed to setup auth err=%v", err)
+		return fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
 	if cmd.client, err = sarama.NewClient(cmd.Brokers, cfg); err != nil {
-		failf("failed to create client err=%v", err)
+		return fmt.Errorf("failed to create client err=%v", err)
 	}
+	return nil
 }
 
 func (cmd *consumeCmd) run() error {
@@ -560,28 +563,32 @@ func (cmd *consumeCmd) run() error {
 		close(cmd.shutdown)
 	}()
 
-	cmd.setupClient()
+	if err := cmd.setupClient(); err != nil {
+		return err
+	}
 
 	// Use consumer group if group is specified
 	if cmd.Group != "" {
 		if cmd.consumerGroup, err = sarama.NewConsumerGroupFromClient(cmd.Group, cmd.client); err != nil {
-			failf("failed to create consumer group err=%v", err)
+			return fmt.Errorf("failed to create consumer group err=%v", err)
 		}
 		defer logClose("consumer group", cmd.consumerGroup)
 
 		cmd.consumeWithGroup()
 	} else {
 		// Fallback to old behavior for non-group consumers
-		cmd.setupOffsetManager()
+		if err = cmd.setupOffsetManager(); err != nil {
+			return err
+		}
 
 		if cmd.consumer, err = sarama.NewConsumerFromClient(cmd.client); err != nil {
-			failf("failed to create consumer err=%v", err)
+			return fmt.Errorf("failed to create consumer err=%v", err)
 		}
 		defer logClose("consumer", cmd.consumer)
 
 		partitions := cmd.findPartitions()
 		if len(partitions) == 0 {
-			failf("Found no partitions to consume")
+			return fmt.Errorf("Found no partitions to consume")
 		}
 		defer cmd.closePOMs()
 
@@ -681,15 +688,16 @@ func (cmd *consumeCmd) consumeWithGroup() {
 	cmd.wg.Wait()
 }
 
-func (cmd *consumeCmd) setupOffsetManager() {
+func (cmd *consumeCmd) setupOffsetManager() error {
 	if cmd.Group == "" {
-		return
+		return nil
 	}
 
 	var err error
 	if cmd.offsetManager, err = sarama.NewOffsetManagerFromClient(cmd.Group, cmd.client); err != nil {
-		failf("failed to create offsetmanager err=%v", err)
+		return fmt.Errorf("failed to create offsetmanager err=%v", err)
 	}
+	return nil
 }
 
 func (cmd *consumeCmd) consume(partitions []int32) {
@@ -818,7 +826,8 @@ func (cmd *consumeCmd) getPOM(p int32) sarama.PartitionOffsetManager {
 	pom, err := cmd.offsetManager.ManagePartition(cmd.Topic, p)
 	if err != nil {
 		cmd.Unlock()
-		failf("failed to create partition offset manager err=%v", err)
+		warnf("failed to create partition offset manager err=%v", err)
+		return nil
 	}
 	cmd.poms[p] = pom
 	cmd.Unlock()
@@ -916,7 +925,8 @@ func (cmd *consumeCmd) findPartitions() []int32 {
 		err error
 	)
 	if all, err = cmd.consumer.Partitions(cmd.Topic); err != nil {
-		failf("failed to read partitions for topic %v err=%v", cmd.Topic, err)
+		warnf("failed to read partitions for topic %v err=%v", cmd.Topic, err)
+		return []int32{}
 	}
 
 	if _, hasDefault := cmd.offsets[-1]; hasDefault {

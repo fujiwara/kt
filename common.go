@@ -144,7 +144,9 @@ func (b *baseCmd) prepare() error {
 	}
 
 	// Read auth configuration
-	readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth)
+	if err = readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -218,42 +220,52 @@ func print(in <-chan printContext, pretty bool) {
 				return
 			} else if multi {
 				for _, item := range output.([]any) {
-					printOutput(item, marshal, ctx.cmd.Raw)
+					if err := printOutput(item, marshal, ctx.cmd.Raw); err != nil {
+						warnf("failed to print output: %v\n", err)
+						return
+					}
 				}
 			} else {
-				printOutput(output, marshal, ctx.cmd.Raw)
+				if err := printOutput(output, marshal, ctx.cmd.Raw); err != nil {
+					warnf("failed to print output: %v\n", err)
+					return
+				}
 			}
 		} else {
-			printOutput(ctx.output, marshal, ctx.cmd.Raw)
+			if err := printOutput(ctx.output, marshal, ctx.cmd.Raw); err != nil {
+				warnf("failed to print output: %v\n", err)
+				return
+			}
 		}
 		close(ctx.done)
 	}
 }
 
-func printOutput(output any, marshal func(any) ([]byte, error), raw bool) {
+func printOutput(output any, marshal func(any) ([]byte, error), raw bool) error {
 	if raw {
 		switch output := output.(type) {
 		case []byte:
 			stdoutWriter.Write(output)
 			stdoutWriter.Write([]byte{'\n'})
-			return
+			return nil
 		case string:
 			io.WriteString(stdoutWriter, output)
 			io.WriteString(stdoutWriter, "\n")
-			return
+			return nil
 		case *string:
 			io.WriteString(stdoutWriter, *output)
 			io.WriteString(stdoutWriter, "\n")
-			return
+			return nil
 		}
 	}
 	// Normal JSON output
 	buf, err := marshal(output)
 	if err != nil {
-		failf("failed to marshal output %#v, err=%v", output, err)
+		return fmt.Errorf("failed to marshal output %#v, err=%v", output, err)
 	}
 	stdoutWriter.Write(buf)
 	stdoutWriter.Write([]byte{'\n'})
+	return nil
 }
 
 type object interface {
@@ -395,7 +407,7 @@ func setupCerts(certPath, caPath, keyPath string) (*tls.Config, error) {
 	caPool := x509.NewCertPool()
 	ok := caPool.AppendCertsFromPEM(caString)
 	if !ok {
-		failf("unable to add ca at %s to certificate pool", caPath)
+		return nil, fmt.Errorf("unable to add ca at %s to certificate pool", caPath)
 	}
 
 	clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
@@ -460,7 +472,7 @@ func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
 	caPool := x509.NewCertPool()
 	ok := caPool.AppendCertsFromPEM(caString)
 	if !ok {
-		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+		return fmt.Errorf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
 	}
 
 	tlsCfg := &tls.Config{RootCAs: caPool}
@@ -483,7 +495,7 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 	caPool := x509.NewCertPool()
 	ok := caPool.AppendCertsFromPEM(caString)
 	if !ok {
-		failf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
+		return fmt.Errorf("unable to add ca-certificate at %s to certificate pool", auth.CACert)
 	}
 
 	clientCert, err := tls.LoadX509KeyPair(auth.ClientCert, auth.ClientCertKey)
@@ -506,9 +518,9 @@ func qualifyPath(argFN string, target *string) {
 	}
 }
 
-func readAuthFile(argFN string, envFN string, target *authConfig) {
+func readAuthFile(argFN string, envFN string, target *authConfig) error {
 	if argFN == "" && envFN == "" {
-		return
+		return nil
 	}
 
 	fn := argFN
@@ -518,14 +530,15 @@ func readAuthFile(argFN string, envFN string, target *authConfig) {
 
 	byts, err := os.ReadFile(fn)
 	if err != nil {
-		failf("failed to read auth file err=%v", err)
+		return fmt.Errorf("failed to read auth file err=%v", err)
 	}
 
 	if err := json.Unmarshal(byts, target); err != nil {
-		failf("failed to unmarshal auth file err=%v", err)
+		return fmt.Errorf("failed to unmarshal auth file err=%v", err)
 	}
 
 	qualifyPath(fn, &target.CACert)
 	qualifyPath(fn, &target.ClientCert)
 	qualifyPath(fn, &target.ClientCertKey)
+	return nil
 }
