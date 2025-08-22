@@ -105,8 +105,8 @@ func runSystemTest(t *testing.T, config testConfig) {
 	defer os.RemoveAll(fnTopicDetail)
 
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "admin",
-		"--createtopic", topicName,
-		"--topicdetail", fnTopicDetail)
+		"--create-topic", topicName,
+		"--topic-detail", fnTopicDetail)
 	fmt.Printf(">> system test kt admin -createtopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -createtopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
@@ -176,7 +176,7 @@ func runSystemTest(t *testing.T, config testConfig) {
 	// kt admin -deletetopic
 	//
 	status, stdOut, stdErr = runMethod(newCmd().stdIn(string(buf)), "./kt", "admin",
-		"--deletetopic", topicName)
+		"--delete-topic", topicName)
 	fmt.Printf(">> system test kt admin -deletetopic %v stdout:\n%s\n", topicName, stdOut)
 	fmt.Printf(">> system test kt admin -deletetopic %v stderr:\n%s\n", topicName, stdErr)
 	require.Zero(t, status)
