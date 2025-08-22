@@ -56,11 +56,11 @@ func kafkaCompression(codecName string) sarama.CompressionCodec {
 		return sarama.CompressionSnappy
 	case "lz4":
 		return sarama.CompressionLZ4
-	case "":
+	case "", "none":
 		return sarama.CompressionNone
 	}
 
-	failf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
+	failf("unsupported compression codec %#v - supported: none, gzip, snappy, lz4", codecName)
 	panic("unreachable")
 }
 
@@ -147,8 +147,8 @@ type produceCmd struct {
 	Timeout     time.Duration `help:"Timeout for request to Kafka" default:"5s"`
 	Quiet       bool          `help:"Don't output messages during processing"`
 	Literal     bool          `help:"Interpret stdin line literally and pass it as value, key as null"`
-	Compression string        `help:"Compression codec to use (none, gzip, snappy, lz4, zstd)" default:"none"`
-	Partitioner string        `help:"Partitioner to use (manual, random, hash)" default:"manual"`
+	Compression string        `help:"Compression codec to use (none, gzip, snappy, lz4, zstd)" default:""`
+	Partitioner string        `help:"Partitioner to use (hashCode, hashCodeByValue)" default:""`
 	DecodeKey   string        `help:"Decode message key (string, hex, base64)" default:"string"`
 	DecodeValue string        `help:"Decode message value (string, hex, base64)" default:"string"`
 	BufferSize  int           `help:"Buffer size for producer" default:"8192"`

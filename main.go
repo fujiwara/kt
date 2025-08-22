@@ -77,6 +77,8 @@ func main() {
 		failf(err.Error())
 	}
 	switch sub {
+	case "consume":
+		cli.Consume.run()
 	case "topic":
 		cli.Topic.run()
 	case "admin":
@@ -110,7 +112,8 @@ func mainLegacy(args []string) {
 	var cmd command
 	switch args[1] {
 	case "consume":
-		cmd = &consumeCmd{}
+		// cmd = &consumeCmd{}
+		failf("consume command is now handled by Kong")
 	case "produce":
 		// cmd = &produceCmd{}
 		failf("produce command is now handled by Kong")
