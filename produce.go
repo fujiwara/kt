@@ -142,9 +142,9 @@ type produceCmd struct {
 	leaders     map[int32]*sarama.Broker
 }
 
-func (cmd *produceCmd) run() {
+func (cmd *produceCmd) run() error {
 	if err := cmd.prepare(); err != nil {
-		failf("%v", err)
+		return err
 	}
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -170,6 +170,7 @@ func (cmd *produceCmd) run() {
 	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
 	go cmd.batchRecords(messages, batchedMessages)
 	cmd.produce(batchedMessages, out)
+	return nil
 }
 
 func (cmd *produceCmd) readStdinLines(max int, out chan string) {

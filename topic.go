@@ -118,14 +118,14 @@ func (cmd *topicCmd) connect() {
 	}
 }
 
-func (cmd *topicCmd) run() {
+func (cmd *topicCmd) run() error {
 	var (
 		err error
 		all []string
 		out = make(chan printContext)
 	)
 	if err = cmd.prepare(); err != nil {
-		failf("%v", err)
+		return err
 	}
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -157,6 +157,7 @@ func (cmd *topicCmd) run() {
 		}(tn)
 	}
 	wg.Wait()
+	return nil
 }
 
 func (cmd *topicCmd) print(name string, out chan printContext) {

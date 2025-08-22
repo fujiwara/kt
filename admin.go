@@ -54,11 +54,11 @@ func (cmd *adminCmd) prepare() error {
 	return nil
 }
 
-func (cmd *adminCmd) run() {
+func (cmd *adminCmd) run() error {
 	var err error
 
 	if err = cmd.prepare(); err != nil {
-		failf("%v", err)
+		return err
 	}
 
 	if cmd.Verbose {
@@ -66,30 +66,32 @@ func (cmd *adminCmd) run() {
 	}
 
 	if cmd.admin, err = sarama.NewClusterAdmin(cmd.brokers, cmd.saramaConfig()); err != nil {
-		failf("failed to create cluster admin err=%v", err)
+		return fmt.Errorf("failed to create cluster admin err=%v", err)
 	}
 
 	if cmd.CreateTopic != "" {
-		cmd.runCreateTopic()
+		return cmd.runCreateTopic()
 	} else if cmd.DeleteTopic != "" {
-		cmd.runDeleteTopic()
+		return cmd.runDeleteTopic()
 	} else {
-		failf("need to supply at least one sub-command of: createtopic, deletetopic")
+		return fmt.Errorf("need to supply at least one sub-command of: createtopic, deletetopic")
 	}
 }
 
-func (cmd *adminCmd) runCreateTopic() {
+func (cmd *adminCmd) runCreateTopic() error {
 	err := cmd.admin.CreateTopic(cmd.CreateTopic, cmd.topicDetail, cmd.ValidateOnly)
 	if err != nil {
-		failf("failed to create topic err=%v", err)
+		return fmt.Errorf("failed to create topic err=%v", err)
 	}
+	return nil
 }
 
-func (cmd *adminCmd) runDeleteTopic() {
+func (cmd *adminCmd) runDeleteTopic() error {
 	err := cmd.admin.DeleteTopic(cmd.DeleteTopic)
 	if err != nil {
-		failf("failed to delete topic err=%v", err)
+		return fmt.Errorf("failed to delete topic err=%v", err)
 	}
+	return nil
 }
 
 func (cmd *adminCmd) saramaConfig() *sarama.Config {

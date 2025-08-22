@@ -75,11 +75,11 @@ const (
 	resetNotSpecified  = -23
 )
 
-func (cmd *groupCmd) run() {
+func (cmd *groupCmd) run() error {
 	var err error
 
 	if err = cmd.prepare(); err != nil {
-		failf("%v", err)
+		return err
 	}
 
 	if cmd.Verbose {
@@ -126,7 +126,7 @@ func (cmd *groupCmd) run() {
 
 			cmd.infof("%v/%v\n", i+1, len(groups))
 		}
-		return
+		return nil
 	}
 
 	topicPartitions := map[string][]int32{}
@@ -150,6 +150,7 @@ func (cmd *groupCmd) run() {
 		}
 	}
 	wg.Wait()
+	return nil
 }
 
 func (cmd *groupCmd) printGroupTopicOffset(out chan printContext, grp, top string, parts []int32) {

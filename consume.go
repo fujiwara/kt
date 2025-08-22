@@ -537,9 +537,9 @@ func (cmd *consumeCmd) setupClient() {
 	}
 }
 
-func (cmd *consumeCmd) run() {
+func (cmd *consumeCmd) run() error {
 	if err := cmd.prepare(); err != nil {
-		failf("%v", err)
+		return err
 	}
 	if cmd.Verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
@@ -590,6 +590,7 @@ func (cmd *consumeCmd) run() {
 
 	// Wait for all goroutines to finish
 	cmd.wg.Wait()
+	return nil
 }
 
 func (cmd *consumeCmd) consumeWithGroup() {

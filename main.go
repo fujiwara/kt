@@ -48,17 +48,21 @@ func main() {
 	if err != nil {
 		failf(err.Error())
 	}
+	var runErr error
 	switch sub {
 	case "consume":
-		cli.Consume.run()
+		runErr = cli.Consume.run()
 	case "topic":
-		cli.Topic.run()
+		runErr = cli.Topic.run()
 	case "admin":
-		cli.Admin.run()
+		runErr = cli.Admin.run()
 	case "group":
-		cli.Group.run()
+		runErr = cli.Group.run()
 	case "produce":
-		cli.Produce.run()
+		runErr = cli.Produce.run()
+	}
+	if runErr != nil {
+		failf("%v", runErr)
 	}
 }
 
