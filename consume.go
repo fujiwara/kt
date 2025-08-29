@@ -958,6 +958,9 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 		} else {
 			// Until time is already in the past
 			debugf(cmd, "Partition %d: until time %s is in the past, exiting immediately\n", p, cmd.until.Format(time.RFC3339))
+			if cmd.untilReached != nil {
+				close(cmd.untilReached)
+			}
 			return
 		}
 	}
