@@ -389,6 +389,9 @@ func (cmd *groupCmd) prepare() error {
 	switch cmd.Partitions {
 	case "", "all":
 		cmd.partitions = []int32{}
+		if cmd.Partitions != "" {
+			cmd.infof("Parsed --partitions %q as: all partitions\n", cmd.Partitions)
+		}
 	default:
 		pss := strings.Split(cmd.Partitions, ",")
 		for _, ps := range pss {
@@ -398,6 +401,7 @@ func (cmd *groupCmd) prepare() error {
 			}
 			cmd.partitions = append(cmd.partitions, int32(p))
 		}
+		cmd.infof("Parsed --partitions %q as: %v\n", cmd.Partitions, cmd.partitions)
 	}
 
 	if cmd.partitions == nil {
@@ -415,8 +419,10 @@ func (cmd *groupCmd) prepare() error {
 	switch cmd.Reset {
 	case "newest":
 		cmd.reset = sarama.OffsetNewest
+		cmd.infof("Parsed --reset %q as: newest offset\n", cmd.Reset)
 	case "oldest":
 		cmd.reset = sarama.OffsetOldest
+		cmd.infof("Parsed --reset %q as: oldest offset\n", cmd.Reset)
 	case "":
 		// optional flag
 		cmd.reset = resetNotSpecified
@@ -430,7 +436,10 @@ func (cmd *groupCmd) prepare() error {
 			if err == nil {
 				cmd.reset = dt.UnixMilli()
 				cmd.resetTime = true
+				cmd.infof("Parsed --reset %q as timestamp: %s (milliseconds: %d)\n", cmd.Reset, dt.Format(time.RFC3339), cmd.reset)
 			}
+		} else {
+			cmd.infof("Parsed --reset %q as specific offset: %d\n", cmd.Reset, cmd.reset)
 		}
 		if err != nil {
 			warnf("failed to parse set %#v err=%v", cmd.Reset, err)
