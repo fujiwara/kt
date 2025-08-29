@@ -44,6 +44,8 @@ type consumeCmd struct {
 
 var offsetResume int64 = -3
 
+const maxInt64 = 1<<63 - 1
+
 func debugf(cmd *consumeCmd, format string, args ...interface{}) {
 	if cmd.Verbose {
 		warnf("DEBUG: "+format, args...)
@@ -248,6 +250,8 @@ func (cmd *consumeCmd) resolveTimestampOffset(timestampMs int64, partition int32
 	if partitionOffset.Offset == -1 {
 		debugf(cmd, "No messages found at or after timestamp %s for partition %d, using newest offset\n", time.UnixMilli(timestampMs).Format(time.RFC3339), partition)
 		// Return the newest offset (next position to be written)
+		// This behavior ensures that when starting from a timestamp in the future or
+		// after all existing messages, we position at the end and wait for new messages
 		return cmd.client.GetOffset(cmd.Topic, partition, sarama.OffsetNewest)
 	}
 
@@ -310,7 +314,7 @@ func describeOffset(o offset) string {
 	}
 
 	if !o.relative {
-		if o.start == 1<<63-1 {
+		if o.start == maxInt64 {
 			return "last"
 		}
 		return fmt.Sprintf("%d", o.start)
@@ -572,7 +576,7 @@ func newestOffset() offset {
 }
 
 func lastOffset() offset {
-	return offset{relative: false, start: 1<<63 - 1}
+	return offset{relative: false, start: maxInt64}
 }
 
 func (cmd *consumeCmd) setupClient() error {
@@ -824,16 +828,15 @@ func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) 
 	debugf(cmd, "Partition %d: resolved end offset %s to %d\n", partition, describeOffset(offsets.end), end)
 
 	// Check if we should exit early due to until time
-	if cmd.until != nil {
-		// Get the current high water mark (newest offset)
+	// Only perform expensive high water mark lookup if until time is in the past
+	if cmd.until != nil && time.Now().After(*cmd.until) {
+		// Get the current high water mark (newest offset) only when necessary
 		highWaterMark, err := cmd.client.GetOffset(cmd.Topic, partition, sarama.OffsetNewest)
 		if err == nil && start >= highWaterMark {
-			// We're starting at or beyond the high water mark, check until time
-			if time.Now().After(*cmd.until) {
-				debugf(cmd, "Partition %d: start offset %d >= high water mark %d and current time is after until time %s, exiting early\n",
-					partition, start, highWaterMark, cmd.until.Format(time.RFC3339))
-				return
-			}
+			// We're starting at or beyond the high water mark and until time has passed
+			debugf(cmd, "Partition %d: start offset %d >= high water mark %d and current time is after until time %s, exiting early\n",
+				partition, start, highWaterMark, cmd.until.Format(time.RFC3339))
+			return
 		}
 	}
 
