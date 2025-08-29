@@ -68,7 +68,11 @@ func main() {
 
 func parseKong(args []string) (string, *CLI, error) {
 	var cli CLI
-	parser, err := kong.New(&cli, kong.Vars{"version": versionMessage})
+	parser, err := kong.New(
+		&cli,
+		kong.Vars{"version": versionMessage},
+		kong.WithHyphenPrefixedParameters(true),
+	)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create kong parser: %w", err)
 	}
