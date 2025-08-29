@@ -592,7 +592,7 @@ func (cmd *consumeCmd) setupClient() error {
 	cfg.ClientID = "kt-consume-" + sanitizeUsername(usr.Username)
 
 	// Configure consumer group settings
-	cfg.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRoundRobin()
+	cfg.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
 	cfg.Consumer.Group.Session.Timeout = 10 * time.Second
 	cfg.Consumer.Group.Heartbeat.Interval = 3 * time.Second
 
