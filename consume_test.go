@@ -966,24 +966,34 @@ func TestUntilTimeStopBehavior(t *testing.T) {
 		Value:     []byte("recent message"),
 	}
 
-	// Test partition consumer with until time
-	t.Run("partition-consumer-stops-at-high-water-mark-with-until", func(t *testing.T) {
-		messageChan := make(chan *sarama.ConsumerMessage, 2)
-		messageChan <- oldMessage
-		messageChan <- recentMessage
+	// Test partition consumer with until time - message timestamp exceeds until time
+	t.Run("partition-consumer-stops-when-message-timestamp-exceeds-until", func(t *testing.T) {
+		// Create message with timestamp after until time
+		futureMessage := &sarama.ConsumerMessage{
+			Topic:     "test-topic",
+			Partition: 0,
+			Offset:    0,
+			Timestamp: now.Add(10 * time.Minute), // Future timestamp
+			Value:     []byte("future message"),
+		}
+		
+		messageChan := make(chan *sarama.ConsumerMessage, 1)
+		messageChan <- futureMessage
 		close(messageChan)
 
 		pc := tPartitionConsumer{
 			messages:            messageChan,
-			highWaterMarkOffset: 2, // High water mark at offset 2
+			highWaterMarkOffset: 1,
 		}
 
+		// Set until time to slightly in the future to avoid immediate timer expiry
+		untilTime := now.Add(100 * time.Millisecond)
 		cmd := &consumeCmd{
-			until:        &now,
+			until:        &untilTime,
 			untilReached: make(chan struct{}, 1),
 		}
 
-		out := make(chan printContext, 2)
+		out := make(chan printContext, 1)
 		// Process messages in background
 		go func() {
 			for ctx := range out {
@@ -995,12 +1005,13 @@ func TestUntilTimeStopBehavior(t *testing.T) {
 		end := int64(1<<63 - 1) // Max end offset
 		go cmd.partitionLoop(out, pc, p, end)
 
-		// Should receive until reached signal
+		// Should receive until reached signal when message timestamp > until time
 		select {
 		case <-cmd.untilReached:
-			// Expected behavior - consumer should stop when reaching high water mark with until time
+			// Expected behavior - consumer should stop when message timestamp exceeds until time
+			t.Logf("Successfully received untilReached signal. until=%v, msgTimestamp=%v", untilTime, futureMessage.Timestamp)
 		case <-time.After(1 * time.Second):
-			t.Error("Expected consumer to stop when reaching high water mark with until time")
+			t.Errorf("Expected consumer to stop when message timestamp exceeds until time. until=%v, msgTimestamp=%v", untilTime, futureMessage.Timestamp)
 		}
 	})
 

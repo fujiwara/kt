@@ -946,15 +946,21 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 	}
 
 	// Set up until timer if specified
+	// Only exit immediately if until time is significantly in the past (more than 1 second)
+	// to allow processing of messages that might have timestamps at or near until time
 	if cmd.until != nil {
 		duration := time.Until(*cmd.until)
-		if duration > 0 {
+		if duration > -time.Second {
+			// Set timer for future time or give small buffer for past time
+			if duration <= 0 {
+				duration = 100 * time.Millisecond // Small buffer for processing
+			}
 			untilTimer = time.NewTimer(duration)
 			untilTimeout = untilTimer.C
 			debugf(cmd, "Partition %d: will stop consuming at %s (in %v)\n", p, cmd.until.Format(time.RFC3339), duration)
 		} else {
-			// Until time is already in the past
-			debugf(cmd, "Partition %d: until time %s is in the past, exiting immediately\n", p, cmd.until.Format(time.RFC3339))
+			// Until time is significantly in the past
+			debugf(cmd, "Partition %d: until time %s is significantly in the past, exiting immediately\n", p, cmd.until.Format(time.RFC3339))
 			return
 		}
 	}
