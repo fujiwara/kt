@@ -1,5 +1,9 @@
 # Changelog
 
+## [v15.0.1](https://github.com/fujiwara/kt/compare/v15.0.0...v15.0.1) - 2025-08-29
+- Add detailed verbose logging for argument parsing by @fujiwara in https://github.com/fujiwara/kt/pull/26
+- Fix deprecated Sarama rebalance strategy configuration by @fujiwara in https://github.com/fujiwara/kt/pull/28
+
 ## [v15.0.0](https://github.com/fujiwara/kt/compare/v14.2.0...v15.0.0) - 2025-08-22
 - Migrate CLI from flag package to Kong by @fujiwara in https://github.com/fujiwara/kt/pull/21
 - Improve error handling by @fujiwara in https://github.com/fujiwara/kt/pull/23
