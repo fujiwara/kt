@@ -976,7 +976,7 @@ func TestUntilTimeStopBehavior(t *testing.T) {
 			Timestamp: now.Add(10 * time.Minute), // Future timestamp
 			Value:     []byte("future message"),
 		}
-		
+
 		messageChan := make(chan *sarama.ConsumerMessage, 1)
 		messageChan <- futureMessage
 		close(messageChan)
