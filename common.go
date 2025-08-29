@@ -428,8 +428,6 @@ func setupAuthTLS1Way(auth authConfig, saramaCfg *sarama.Config) error {
 	}
 
 	tlsCfg := &tls.Config{RootCAs: caPool}
-	tlsCfg.BuildNameToCertificate()
-
 	saramaCfg.Net.TLS.Config = tlsCfg
 	return nil
 }
@@ -456,8 +454,6 @@ func setupAuthTLS(auth authConfig, saramaCfg *sarama.Config) error {
 	}
 
 	tlsCfg := &tls.Config{RootCAs: caPool, Certificates: []tls.Certificate{clientCert}}
-	tlsCfg.BuildNameToCertificate()
-
 	saramaCfg.Net.TLS.Enable = true
 	saramaCfg.Net.TLS.Config = tlsCfg
 
