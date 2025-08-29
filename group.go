@@ -389,9 +389,7 @@ func (cmd *groupCmd) prepare() error {
 	switch cmd.Partitions {
 	case "", "all":
 		cmd.partitions = []int32{}
-		if cmd.Partitions != "" {
-			cmd.infof("Parsed --partitions %q as: all partitions\n", cmd.Partitions)
-		}
+		cmd.infof("Parsed --partitions %q as: all partitions\n", cmd.Partitions)
 	default:
 		pss := strings.Split(cmd.Partitions, ",")
 		for _, ps := range pss {
