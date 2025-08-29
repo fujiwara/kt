@@ -44,6 +44,8 @@ type consumeCmd struct {
 
 var offsetResume int64 = -3
 
+const maxInt64 = 1<<63 - 1
+
 func debugf(cmd *consumeCmd, format string, args ...interface{}) {
 	if cmd.Verbose {
 		warnf("DEBUG: "+format, args...)
@@ -137,14 +139,19 @@ type offset struct {
 
 func (cmd *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
 	if !o.relative {
+		debugf(cmd, "Offset is absolute: %d for partition %d\n", o.start, partition)
 		return o.start, nil
 	}
 
 	// Handle timestamp-based offsets
 	if o.timestamp {
+		debugf(cmd, "Resolving timestamp-based offset: %s for partition %d\n", time.UnixMilli(o.start).Format(time.RFC3339), partition)
 		res, err := cmd.resolveTimestampOffset(o.start, partition)
 		if err != nil {
 			return 0, err
+		}
+		if o.diff != 0 {
+			debugf(cmd, "Applying diff %+d to timestamp offset %d, result: %d\n", o.diff, res, res+o.diff)
 		}
 		return res + o.diff, nil
 	}
@@ -155,29 +162,55 @@ func (cmd *consumeCmd) resolveOffset(o offset, partition int32) (int64, error) {
 	)
 
 	if o.start == sarama.OffsetNewest || o.start == sarama.OffsetOldest {
+		baseStr := "oldest"
+		if o.start == sarama.OffsetNewest {
+			baseStr = "newest"
+		}
+		debugf(cmd, "Resolving %s offset for partition %d\n", baseStr, partition)
 		if res, err = cmd.client.GetOffset(cmd.Topic, partition, o.start); err != nil {
 			return 0, err
 		}
 
 		if o.start == sarama.OffsetNewest {
 			res = res - 1
+			debugf(cmd, "Adjusted newest offset from %d to %d (newest-1)\n", res+1, res)
 		}
 
-		return res + o.diff, nil
+		result := res + o.diff
+		if o.diff != 0 {
+			debugf(cmd, "Calculated offset: %d (%s=%d, diff=%+d)\n", result, baseStr, res, o.diff)
+		} else {
+			debugf(cmd, "Resolved %s offset to %d for partition %d\n", baseStr, result, partition)
+		}
+		return result, nil
 	} else if o.start == offsetResume {
 		if cmd.Group == "" {
 			return 0, fmt.Errorf("cannot resume without -group argument")
 		}
+		debugf(cmd, "Resolving 'resume' offset for group %s, partition %d\n", cmd.Group, partition)
 		pom := cmd.getPOM(partition)
 		next, _ := pom.NextOffset()
-		return next, nil
+		result := next + o.diff
+		if o.diff != 0 {
+			debugf(cmd, "Resume offset with diff: %d (committed=%d, diff=%+d) for group %s, partition %d\n", result, next, o.diff, cmd.Group, partition)
+		} else {
+			debugf(cmd, "Resume offset: %d for group %s, partition %d\n", next, cmd.Group, partition)
+		}
+		return result, nil
 	}
 
-	return o.start + o.diff, nil
+	result := o.start + o.diff
+	if o.diff != 0 {
+		debugf(cmd, "Calculated offset: %d (base=%d, diff=%+d) for partition %d\n", result, o.start, o.diff, partition)
+	} else {
+		debugf(cmd, "Offset: %d for partition %d\n", result, partition)
+	}
+	return result, nil
 }
 
 // resolveTimestampOffset resolves a timestamp in milliseconds to the closest Kafka offset
 func (cmd *consumeCmd) resolveTimestampOffset(timestampMs int64, partition int32) (int64, error) {
+	debugf(cmd, "Requesting offset for timestamp %s from broker for partition %d\n", time.UnixMilli(timestampMs).Format(time.RFC3339), partition)
 	// Create an offset request to find the offset for the given timestamp
 	offsetRequest := &sarama.OffsetRequest{
 		Version: 1, // Version 1 supports timestamp-based offset lookup
@@ -213,10 +246,13 @@ func (cmd *consumeCmd) resolveTimestampOffset(timestampMs int64, partition int32
 		return 0, fmt.Errorf("error in offset response: %v", partitionOffset.Err)
 	}
 
-	// If the timestamp is too old, return the oldest available offset
+	// If the offset is -1, it means there are no messages at or after the timestamp
 	if partitionOffset.Offset == -1 {
-		debugf(cmd, "timestamp %d is older than available messages, using oldest offset for partition %d\n", timestampMs, partition)
-		return cmd.client.GetOffset(cmd.Topic, partition, sarama.OffsetOldest)
+		debugf(cmd, "No messages found at or after timestamp %s for partition %d, using newest offset\n", time.UnixMilli(timestampMs).Format(time.RFC3339), partition)
+		// Return the newest offset (next position to be written)
+		// This behavior ensures that when starting from a timestamp in the future or
+		// after all existing messages, we position at the end and wait for new messages
+		return cmd.client.GetOffset(cmd.Topic, partition, sarama.OffsetNewest)
 	}
 
 	return partitionOffset.Offset, nil
@@ -243,6 +279,7 @@ func (cmd *consumeCmd) prepare() error {
 		if err != nil {
 			return fmt.Errorf("failed to parse until time: %v", err)
 		}
+		debugf(cmd, "Parsed --until parameter %q as %s\n", cmd.Until, cmd.until.Format(time.RFC3339))
 	}
 
 	if err = readAuthFile(cmd.Auth, os.Getenv(ENV_AUTH), &cmd.auth); err != nil {
@@ -253,7 +290,55 @@ func (cmd *consumeCmd) prepare() error {
 	if err != nil {
 		return fmt.Errorf("%s", err)
 	}
+
+	// Log parsed offsets when verbose
+	if cmd.Offsets != "" {
+		debugf(cmd, "Parsed --offsets parameter: %q\n", cmd.Offsets)
+		for partition, interval := range cmd.offsets {
+			partitionStr := fmt.Sprintf("%d", partition)
+			if partition == -1 {
+				partitionStr = "all"
+			}
+			debugf(cmd, "  Partition %s: start=%s, end=%s\n", partitionStr, describeOffset(interval.start), describeOffset(interval.end))
+		}
+	}
+
 	return nil
+}
+
+// describeOffset returns a human-readable description of an offset
+func describeOffset(o offset) string {
+	if o.timestamp {
+		// Always show the actual timestamp, don't try to guess if it was "now"
+		return fmt.Sprintf("timestamp(%s)", time.UnixMilli(o.start).Format(time.RFC3339))
+	}
+
+	if !o.relative {
+		if o.start == maxInt64 {
+			return "last"
+		}
+		return fmt.Sprintf("%d", o.start)
+	}
+
+	var base string
+	switch o.start {
+	case sarama.OffsetOldest:
+		base = "oldest"
+	case sarama.OffsetNewest:
+		base = "newest"
+	case offsetResume:
+		base = "resume"
+	default:
+		base = fmt.Sprintf("%d", o.start)
+	}
+
+	if o.diff != 0 {
+		if o.diff > 0 {
+			return fmt.Sprintf("%s+%d", base, o.diff)
+		}
+		return fmt.Sprintf("%s%d", base, o.diff)
+	}
+	return base
 }
 
 // parseOffsets parses a set of partition-offset specifiers in the following
@@ -491,7 +576,7 @@ func newestOffset() offset {
 }
 
 func lastOffset() offset {
-	return offset{relative: false, start: 1<<63 - 1}
+	return offset{relative: false, start: maxInt64}
 }
 
 func (cmd *consumeCmd) setupClient() error {
@@ -734,10 +819,25 @@ func (cmd *consumeCmd) consumePartition(out chan printContext, partition int32) 
 		warnf("Failed to read start offset for partition %v err=%v\n", partition, err)
 		return
 	}
+	debugf(cmd, "Partition %d: resolved start offset %s to %d\n", partition, describeOffset(offsets.start), start)
 
 	if end, err = cmd.resolveOffset(offsets.end, partition); err != nil {
 		warnf("Failed to read end offset for partition %v err=%v\n", partition, err)
 		return
+	}
+	debugf(cmd, "Partition %d: resolved end offset %s to %d\n", partition, describeOffset(offsets.end), end)
+
+	// Check if we should exit early due to until time
+	// Only perform expensive high water mark lookup if until time is in the past
+	if cmd.until != nil && time.Now().After(*cmd.until) {
+		// Get the current high water mark (newest offset) only when necessary
+		highWaterMark, err := cmd.client.GetOffset(cmd.Topic, partition, sarama.OffsetNewest)
+		if err == nil && start >= highWaterMark {
+			// We're starting at or beyond the high water mark and until time has passed
+			debugf(cmd, "Partition %d: start offset %d >= high water mark %d and current time is after until time %s, exiting early\n",
+				partition, start, highWaterMark, cmd.until.Format(time.RFC3339))
+			return
+		}
 	}
 
 	if pcon, err = cmd.consumer.ConsumePartition(cmd.Topic, partition, start); err != nil {
@@ -837,13 +937,32 @@ func (cmd *consumeCmd) getPOM(p int32) sarama.PartitionOffsetManager {
 func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionConsumer, p int32, end int64) {
 	defer logClose(fmt.Sprintf("partition consumer %v", p), pc)
 	var (
-		timer   *time.Timer
-		pom     sarama.PartitionOffsetManager
-		timeout = make(<-chan time.Time)
+		timer        *time.Timer
+		untilTimer   *time.Timer
+		pom          sarama.PartitionOffsetManager
+		timeout      = make(<-chan time.Time)
+		untilTimeout = make(<-chan time.Time)
 	)
 
 	if cmd.Group != "" {
 		pom = cmd.getPOM(p)
+	}
+
+	// Set up until timer if specified
+	if cmd.until != nil {
+		duration := time.Until(*cmd.until)
+		if duration > 0 {
+			untilTimer = time.NewTimer(duration)
+			untilTimeout = untilTimer.C
+			debugf(cmd, "Partition %d: will stop consuming at %s (in %v)\n", p, cmd.until.Format(time.RFC3339), duration)
+		} else {
+			// Until time is already in the past
+			debugf(cmd, "Partition %d: until time %s is in the past, exiting immediately\n", p, cmd.until.Format(time.RFC3339))
+			if cmd.untilReached != nil {
+				close(cmd.untilReached)
+			}
+			return
+		}
 	}
 
 	for {
@@ -866,6 +985,14 @@ func (cmd *consumeCmd) partitionLoop(out chan printContext, pc sarama.PartitionC
 			return
 		case <-timeout:
 			warnf("consuming from partition %v timed out after %s\n", p, cmd.Timeout)
+			return
+		case <-untilTimeout:
+			debugf(cmd, "Partition %d: reached until time %s, stopping consumption\n", p, cmd.until.Format(time.RFC3339))
+			// Signal that until time was reached
+			select {
+			case cmd.untilReached <- struct{}{}:
+			default:
+			}
 			return
 		case err := <-pc.Errors():
 			warnf("partition %v consumer encountered err %s\n", p, err)
