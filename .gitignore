@@ -11,3 +11,4 @@ test-secrets/*.jks
 test-secrets/*.srl
 test-secrets/*_creds
 test-secrets/auth-ssl.json
+test-secrets/kafka_server_jaas.conf

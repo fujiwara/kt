@@ -725,3 +725,79 @@ func TestBaseCmdBrokers(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupAuthSASL_SSL(t *testing.T) {
+	tests := []struct {
+		name        string
+		auth        authConfig
+		expectError bool
+		checkConfig func(*testing.T, *sarama.Config)
+	}{
+		{
+			name: "SASL_SSL mode without CA cert",
+			auth: authConfig{
+				Mode:              "SASL_SSL",
+				SASLPlainUser:     "testuser",
+				SASLPlainPassword: "testpass",
+			},
+			expectError: false,
+			checkConfig: func(t *testing.T, cfg *sarama.Config) {
+				if !cfg.Net.TLS.Enable {
+					t.Error("TLS should be enabled")
+				}
+				if !cfg.Net.SASL.Enable {
+					t.Error("SASL should be enabled")
+				}
+				if cfg.Net.SASL.User != "testuser" {
+					t.Errorf("SASL user expected 'testuser', got %s", cfg.Net.SASL.User)
+				}
+				if cfg.Net.SASL.Password != "testpass" {
+					t.Errorf("SASL password expected 'testpass', got %s", cfg.Net.SASL.Password)
+				}
+			},
+		},
+		{
+			name: "TLS-1way-SASL mode without CA cert",
+			auth: authConfig{
+				Mode:              "TLS-1way-SASL",
+				SASLPlainUser:     "testuser2",
+				SASLPlainPassword: "testpass2",
+			},
+			expectError: false,
+			checkConfig: func(t *testing.T, cfg *sarama.Config) {
+				if !cfg.Net.TLS.Enable {
+					t.Error("TLS should be enabled")
+				}
+				if !cfg.Net.SASL.Enable {
+					t.Error("SASL should be enabled")
+				}
+				if cfg.Net.SASL.User != "testuser2" {
+					t.Errorf("SASL user expected 'testuser2', got %s", cfg.Net.SASL.User)
+				}
+				if cfg.Net.SASL.Password != "testpass2" {
+					t.Errorf("SASL password expected 'testpass2', got %s", cfg.Net.SASL.Password)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := sarama.NewConfig()
+			err := setupAuth(tt.auth, cfg)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if tt.checkConfig != nil {
+					tt.checkConfig(t, cfg)
+				}
+			}
+		})
+	}
+}

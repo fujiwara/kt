@@ -400,14 +400,14 @@ func TestSystem(t *testing.T) {
 	fmt.Printf(">> ✓\n")
 }
 
-func TestSystemSSL(t *testing.T) {
+func TestSystemSASL_SSL(t *testing.T) {
 	config := testConfig{
-		topicPrefix: "kt-test-ssl",
-		keyValue:    "boom-ssl",
-		groupName:   "hans-ssl",
+		topicPrefix: "kt-test-sasl-ssl",
+		keyValue:    "boom-sasl-ssl",
+		groupName:   "hans-sasl-ssl",
 		useSSL:      true,
 		authFile:    "test-secrets/auth-ssl.json",
-		isFullTest:  false, // SSL test runs basic operations only
+		isFullTest:  false, // SASL_SSL test runs basic operations only
 	}
 	runSystemTest(t, config)
 }
