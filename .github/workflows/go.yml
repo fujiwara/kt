@@ -54,7 +54,7 @@ jobs:
     - name: Create SCRAM users for testing
       run: |
         echo "Creating SCRAM-SHA-256 user for testing..."
-        docker compose exec -T kafka /opt/kafka/bin/kafka-configs.sh \
+        docker compose -f test-dependencies.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh \
           --bootstrap-server localhost:9093 \
           --alter \
           --add-config 'SCRAM-SHA-256=[password=testpass]' \
