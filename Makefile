@@ -19,6 +19,17 @@ dep-down:
 test: clean
 	go test -v -vet=all -failfast -race
 
+setup-integration:
+	docker compose -f test-dependencies.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh \
+		--bootstrap-server localhost:9093 \
+		--alter \
+		--add-config 'SCRAM-SHA-256=[password=testpass]' \
+		--entity-type users \
+		--entity-name testuser \
+		--command-config /etc/kafka/secrets/client.properties
+	echo "SCRAM user created successfully"
+
+
 test-integration:
 	go test -v -vet=all -failfast -race -tags=integration
 

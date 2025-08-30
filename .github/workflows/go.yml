@@ -17,10 +17,10 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v5
       with:
-        go-version: ^1.24
+        go-version: ^1.25
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Unit Test
       run: make test
@@ -33,15 +33,15 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v5
       with:
-        go-version: ^1.24
+        go-version: ^1.25
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Generate test certificates and bring up containers
       run: |
         make test-secrets
-        docker compose -f test-dependencies.yml up -d
+        make dep-up
 
     - name: Wait for Kafka to be ready
       run: |
@@ -51,20 +51,10 @@ jobs:
         timeout 60 bash -c 'until docker logs kt-kafka-1 2>&1 | grep -q "Kafka Server started"; do sleep 2; done'
         echo "Kafka is ready!"
 
-    - name: Create SCRAM users for testing
-      run: |
-        echo "Creating SCRAM-SHA-256 user for testing..."
-        docker compose -f test-dependencies.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh \
-          --bootstrap-server localhost:9093 \
-          --alter \
-          --add-config 'SCRAM-SHA-256=[password=testpass]' \
-          --entity-type users \
-          --entity-name testuser \
-          --command-config /etc/kafka/secrets/client.properties
-        echo "SCRAM user created successfully"
-
     - name: Integration Test
-      run: make test-integration
+      run: |
+        make setup-integration
+        make test-integration
 
     - name: Tear down containers
-      run: docker compose -f test-dependencies.yml down
+      run: make dep-down
