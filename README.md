@@ -397,15 +397,28 @@ Example:
 Required fields:
 
  - `mode`: This needs to be set to `SASL`
- - `sasl_plain_user`: SASL username
- - `sasl_plain_password`: SASL password
+ - `sasl_user`: SASL username
+ - `sasl_password`: SASL password
 
-Example:
+Optional fields:
+
+ - `sasl_mechanism`: SASL mechanism (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512). Defaults to PLAIN
+
+Example for PLAIN:
 
     {
         "mode": "SASL",
-        "sasl_plain_user": "your_username",
-        "sasl_plain_password": "your_password"
+        "sasl_user": "your_username",
+        "sasl_password": "your_password"
+    }
+
+Example for SCRAM-SHA-256:
+
+    {
+        "mode": "SASL",
+        "sasl_user": "your_username",
+        "sasl_password": "your_password",
+        "sasl_mechanism": "SCRAM-SHA-256"
     }
 
 ### SASL_SSL / TLS-1way-SASL
@@ -415,19 +428,30 @@ This mode combines TLS encryption with SASL authentication.
 Required fields:
 
  - `mode`: This needs to be set to `SASL_SSL` or `TLS-1way-SASL`
- - `sasl_plain_user`: SASL username
- - `sasl_plain_password`: SASL password
+ - `sasl_user`: SASL username
+ - `sasl_password`: SASL password
 
 Optional fields:
 
  - `ca-certificate`: Path to your CA certificate
+ - `sasl_mechanism`: SASL mechanism (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512). Defaults to PLAIN
 
-Example:
+Example with PLAIN:
 
     {
         "mode": "SASL_SSL",
-        "sasl_plain_user": "your_username",
-        "sasl_plain_password": "your_password",
+        "sasl_user": "your_username",
+        "sasl_password": "your_password",
+        "ca-certificate": "ca-cert.pem"
+    }
+
+Example with SCRAM-SHA-512:
+
+    {
+        "mode": "SASL_SSL",
+        "sasl_user": "your_username",
+        "sasl_password": "your_password",
+        "sasl_mechanism": "SCRAM-SHA-512",
         "ca-certificate": "ca-cert.pem"
     }
 

@@ -736,9 +736,9 @@ func TestSetupAuthSASL_SSL(t *testing.T) {
 		{
 			name: "SASL_SSL mode without CA cert",
 			auth: authConfig{
-				Mode:              "SASL_SSL",
-				SASLPlainUser:     "testuser",
-				SASLPlainPassword: "testpass",
+				Mode:         "SASL_SSL",
+				SASLUser:     "testuser",
+				SASLPassword: "testpass",
 			},
 			expectError: false,
 			checkConfig: func(t *testing.T, cfg *sarama.Config) {
@@ -759,9 +759,9 @@ func TestSetupAuthSASL_SSL(t *testing.T) {
 		{
 			name: "TLS-1way-SASL mode without CA cert",
 			auth: authConfig{
-				Mode:              "TLS-1way-SASL",
-				SASLPlainUser:     "testuser2",
-				SASLPlainPassword: "testpass2",
+				Mode:         "TLS-1way-SASL",
+				SASLUser:     "testuser2",
+				SASLPassword: "testpass2",
 			},
 			expectError: false,
 			checkConfig: func(t *testing.T, cfg *sarama.Config) {
@@ -776,6 +776,33 @@ func TestSetupAuthSASL_SSL(t *testing.T) {
 				}
 				if cfg.Net.SASL.Password != "testpass2" {
 					t.Errorf("SASL password expected 'testpass2', got %s", cfg.Net.SASL.Password)
+				}
+			},
+		},
+		{
+			name: "Deprecated sasl_plain_user field should error",
+			auth: authConfig{
+				Mode:              "SASL",
+				SASLPlainUser:     "deprecated",
+				SASLPlainPassword: "deprecated",
+			},
+			expectError: true,
+		},
+		{
+			name: "SASL with SCRAM-SHA-256",
+			auth: authConfig{
+				Mode:          "SASL",
+				SASLUser:      "testuser",
+				SASLPassword:  "testpass",
+				SASLMechanism: "SCRAM-SHA-256",
+			},
+			expectError: false,
+			checkConfig: func(t *testing.T, cfg *sarama.Config) {
+				if !cfg.Net.SASL.Enable {
+					t.Error("SASL should be enabled")
+				}
+				if cfg.Net.SASL.Mechanism != sarama.SASLTypeSCRAMSHA256 {
+					t.Errorf("SASL mechanism expected SCRAM-SHA-256, got %s", cfg.Net.SASL.Mechanism)
 				}
 			},
 		},

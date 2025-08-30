@@ -73,8 +73,8 @@ cat > auth-ssl.json << EOF
 {
   "mode": "SASL_SSL",
   "ca-certificate": "test-secrets/ca.crt",
-  "sasl_plain_user": "testuser",
-  "sasl_plain_password": "testpass"
+  "sasl_user": "testuser",
+  "sasl_password": "testpass"
 }
 EOF
 
