@@ -8,7 +8,7 @@ import (
 	"github.com/alecthomas/kong"
 )
 
-const AppVersion = "v15.0.1"
+const AppVersion = "v15.0.2"
 
 var buildVersion, buildTime string
 

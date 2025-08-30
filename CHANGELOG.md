@@ -1,5 +1,8 @@
 # Changelog
 
+## [v15.0.2](https://github.com/fujiwara/kt/compare/v15.0.1...v15.0.2) - 2025-08-29
+- Remove deprecated BuildNameToCertificate calls by @fujiwara in https://github.com/fujiwara/kt/pull/29
+
 ## [v15.0.1](https://github.com/fujiwara/kt/compare/v15.0.0...v15.0.1) - 2025-08-29
 - Add detailed verbose logging for argument parsing by @fujiwara in https://github.com/fujiwara/kt/pull/26
 - Fix deprecated Sarama rebalance strategy configuration by @fujiwara in https://github.com/fujiwara/kt/pull/28
