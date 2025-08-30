@@ -32,7 +32,7 @@ openssl pkcs12 -export -in server.crt -inkey server.key -out server.p12 \
   -name localhost -CAfile ca.crt -caname ca -password pass:${KEY_PASS}
 
 # Use Docker container to run keytool commands
-KAFKA_IMAGE="apache/kafka:3.8.0"
+KAFKA_IMAGE="apache/kafka:3.9.1"
 CURRENT_DIR=$(pwd)
 
 # Fix permissions for Docker container access
@@ -51,7 +51,7 @@ docker run --rm -v "${CURRENT_DIR}:/workspace" -w /workspace --user "$(id -u):$(
 
 # Create credential files
 echo ${STORE_PASS} > kafka_keystore_creds
-echo ${STORE_PASS} > kafka_ssl_key_creds  
+echo ${STORE_PASS} > kafka_ssl_key_creds
 echo ${STORE_PASS} > kafka_truststore_creds
 
 # Clean up intermediate files
