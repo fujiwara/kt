@@ -19,6 +19,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/itchyny/gojq"
+	"github.com/xdg-go/scram"
 	"golang.org/x/term"
 )
 
@@ -376,10 +377,14 @@ func sanitizeUsername(u string) string {
 }
 
 type authConfig struct {
-	Mode              string `json:"mode"`
-	CACert            string `json:"ca-certificate"`
-	ClientCert        string `json:"client-certificate"`
-	ClientCertKey     string `json:"client-certificate-key"`
+	Mode          string `json:"mode"`
+	CACert        string `json:"ca-certificate"`
+	ClientCert    string `json:"client-certificate"`
+	ClientCertKey string `json:"client-certificate-key"`
+	SASLUser      string `json:"sasl_user"`
+	SASLPassword  string `json:"sasl_password"`
+	SASLMechanism string `json:"sasl_mechanism"`
+	// Deprecated fields - will cause error if used
 	SASLPlainUser     string `json:"sasl_plain_user"`
 	SASLPlainPassword string `json:"sasl_plain_password"`
 }
@@ -409,9 +414,33 @@ func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
 }
 
 func setupSASL(auth authConfig, saramaCfg *sarama.Config) error {
+	// Check for deprecated fields
+	if auth.SASLPlainUser != "" || auth.SASLPlainPassword != "" {
+		return fmt.Errorf("deprecated fields 'sasl_plain_user' and 'sasl_plain_password' are no longer supported. Please use 'sasl_user' and 'sasl_password' instead")
+	}
+
 	saramaCfg.Net.SASL.Enable = true
-	saramaCfg.Net.SASL.User = auth.SASLPlainUser
-	saramaCfg.Net.SASL.Password = auth.SASLPlainPassword
+	saramaCfg.Net.SASL.User = auth.SASLUser
+	saramaCfg.Net.SASL.Password = auth.SASLPassword
+
+	// Set SASL mechanism (default to PLAIN if not specified)
+	switch strings.ToUpper(auth.SASLMechanism) {
+	case "", "PLAIN":
+		saramaCfg.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	case "SCRAM-SHA-256":
+		saramaCfg.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+		saramaCfg.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &XDGSCRAMClient{HashGeneratorFcn: scram.SHA256}
+		}
+	case "SCRAM-SHA-512":
+		saramaCfg.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+		saramaCfg.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &XDGSCRAMClient{HashGeneratorFcn: scram.SHA512}
+		}
+	default:
+		return fmt.Errorf("unsupported SASL mechanism: %s", auth.SASLMechanism)
+	}
+
 	return nil
 }
 

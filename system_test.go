@@ -400,13 +400,25 @@ func TestSystem(t *testing.T) {
 	fmt.Printf(">> ✓\n")
 }
 
-func TestSystemSASL_SSL(t *testing.T) {
+func TestSystemSASL_SSL_PLAIN(t *testing.T) {
 	config := testConfig{
-		topicPrefix: "kt-test-sasl-ssl",
-		keyValue:    "boom-sasl-ssl",
-		groupName:   "hans-sasl-ssl",
+		topicPrefix: "kt-test-sasl-ssl-plain",
+		keyValue:    "boom-sasl-ssl-plain",
+		groupName:   "hans-sasl-ssl-plain",
 		useSSL:      true,
 		authFile:    "test-secrets/auth-ssl.json",
+		isFullTest:  false, // SASL_SSL test runs basic operations only
+	}
+	runSystemTest(t, config)
+}
+
+func TestSystemSASL_SSL_SCRAM(t *testing.T) {
+	config := testConfig{
+		topicPrefix: "kt-test-sasl-ssl-scram",
+		keyValue:    "boom-sasl-ssl-scram",
+		groupName:   "hans-sasl-ssl-scram",
+		useSSL:      true,
+		authFile:    "test-secrets/auth-ssl-scram.json",
 		isFullTest:  false, // SASL_SSL test runs basic operations only
 	}
 	runSystemTest(t, config)

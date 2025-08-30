@@ -9,6 +9,7 @@ require (
 	github.com/goccy/go-json v0.10.4
 	github.com/itchyny/gojq v0.12.17
 	github.com/stretchr/testify v1.10.0
+	github.com/xdg-go/scram v1.1.2
 	golang.org/x/term v0.33.0
 )
 
@@ -32,8 +33,11 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
+	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
+	github.com/xdg-go/stringprep v1.0.4 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

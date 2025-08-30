@@ -65,16 +65,42 @@ KafkaServer {
   password="admin-secret"
   user_admin="admin-secret"
   user_testuser="testpass";
+  
+  org.apache.kafka.common.security.scram.ScramLoginModule required
+  username="admin"
+  password="admin-secret";
 };
 EOF
 
-# Generate auth-ssl.json file for SASL_SSL authentication
+# Create client properties for kafka-configs command (used by GitHub Actions)
+cat > client.properties << 'EOF'
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
+ssl.truststore.location=/etc/kafka/secrets/kafka.truststore.jks
+ssl.truststore.password=kafkapass
+ssl.endpoint.identification.algorithm=
+EOF
+
+# Generate auth-ssl.json file for SASL_SSL authentication with PLAIN
 cat > auth-ssl.json << EOF
 {
   "mode": "SASL_SSL",
   "ca-certificate": "test-secrets/ca.crt",
-  "sasl_plain_user": "testuser",
-  "sasl_plain_password": "testpass"
+  "sasl_user": "testuser",
+  "sasl_password": "testpass",
+  "sasl_mechanism": "PLAIN"
+}
+EOF
+
+# Generate auth-ssl-scram.json file for SASL_SSL authentication with SCRAM-SHA-256
+cat > auth-ssl-scram.json << EOF
+{
+  "mode": "SASL_SSL",
+  "ca-certificate": "test-secrets/ca.crt",
+  "sasl_user": "testuser",
+  "sasl_password": "testpass",
+  "sasl_mechanism": "SCRAM-SHA-256"
 }
 EOF
 
@@ -88,4 +114,6 @@ echo "- kafka_keystore_creds (Keystore password file)"
 echo "- kafka_ssl_key_creds (Key password file)"
 echo "- kafka_truststore_creds (Truststore password file)"
 echo "- kafka_server_jaas.conf (SASL JAAS configuration)"
-echo "- auth-ssl.json (SASL_SSL authentication config)"
+echo "- client.properties (Client configuration for kafka-configs)"
+echo "- auth-ssl.json (SASL_SSL authentication config with PLAIN)"
+echo "- auth-ssl-scram.json (SASL_SSL authentication config with SCRAM-SHA-256)"
