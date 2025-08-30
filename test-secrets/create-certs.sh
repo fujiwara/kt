@@ -57,11 +57,24 @@ echo ${STORE_PASS} > kafka_truststore_creds
 # Clean up intermediate files
 rm server.p12
 
-# Generate auth-ssl.json file for TLS-1way authentication
+# Generate JAAS configuration for Kafka server
+cat > kafka_server_jaas.conf << 'EOF'
+KafkaServer {
+  org.apache.kafka.common.security.plain.PlainLoginModule required
+  username="admin"
+  password="admin-secret"
+  user_admin="admin-secret"
+  user_testuser="testpass";
+};
+EOF
+
+# Generate auth-ssl.json file for SASL_SSL authentication
 cat > auth-ssl.json << EOF
 {
-  "mode": "TLS-1way",
-  "ca-certificate": "test-secrets/ca.crt"
+  "mode": "SASL_SSL",
+  "ca-certificate": "test-secrets/ca.crt",
+  "sasl_plain_user": "testuser",
+  "sasl_plain_password": "testpass"
 }
 EOF
 
@@ -74,4 +87,5 @@ echo "- kafka.truststore.jks (CA truststore)"
 echo "- kafka_keystore_creds (Keystore password file)"
 echo "- kafka_ssl_key_creds (Key password file)"
 echo "- kafka_truststore_creds (Truststore password file)"
-echo "- auth-ssl.json (SSL authentication config)"
+echo "- kafka_server_jaas.conf (SASL JAAS configuration)"
+echo "- auth-ssl.json (SASL_SSL authentication config)"

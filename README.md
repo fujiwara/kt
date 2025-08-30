@@ -408,6 +408,29 @@ Example:
         "sasl_plain_password": "your_password"
     }
 
+### SASL_SSL / TLS-1way-SASL
+
+This mode combines TLS encryption with SASL authentication.
+
+Required fields:
+
+ - `mode`: This needs to be set to `SASL_SSL` or `TLS-1way-SASL`
+ - `sasl_plain_user`: SASL username
+ - `sasl_plain_password`: SASL password
+
+Optional fields:
+
+ - `ca-certificate`: Path to your CA certificate
+
+Example:
+
+    {
+        "mode": "SASL_SSL",
+        "sasl_plain_user": "your_username",
+        "sasl_plain_password": "your_password",
+        "ca-certificate": "ca-cert.pem"
+    }
+
 ### Other modes
 
 Please create an

@@ -396,6 +396,13 @@ func setupAuth(auth authConfig, saramaCfg *sarama.Config) error {
 		return setupAuthTLS1Way(auth, saramaCfg)
 	case "SASL":
 		return setupSASL(auth, saramaCfg)
+	case "SASL_SSL", "TLS-1way-SASL":
+		// Setup TLS encryption first
+		if err := setupAuthTLS1Way(auth, saramaCfg); err != nil {
+			return err
+		}
+		// Then add SASL authentication
+		return setupSASL(auth, saramaCfg)
 	default:
 		return fmt.Errorf("unsupported auth mode: %#v", auth.Mode)
 	}
