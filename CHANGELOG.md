@@ -1,5 +1,9 @@
 # Changelog
 
+## [v15.1.0](https://github.com/fujiwara/kt/compare/v15.0.2...v15.1.0) - 2025-08-30
+- Add SASL_SSL authentication mode support by @fujiwara in https://github.com/fujiwara/kt/pull/31
+- Add comprehensive SASL authentication support with multiple mechanisms by @fujiwara in https://github.com/fujiwara/kt/pull/33
+
 ## [v15.0.2](https://github.com/fujiwara/kt/compare/v15.0.1...v15.0.2) - 2025-08-29
 - Remove deprecated BuildNameToCertificate calls by @fujiwara in https://github.com/fujiwara/kt/pull/29
 
