@@ -29,7 +29,7 @@ test-secrets:
 clean:
 	rm -f kt
 	rm -rf dist/
-	rm -f test-secrets/*.crt test-secrets/*.key test-secrets/*.jks test-secrets/*.srl test-secrets/*_creds test-secrets/auth-ssl.json test-secrets/kafka_server_jaas.conf
+	rm -f test-secrets/*.crt test-secrets/*.key test-secrets/*.jks test-secrets/*.srl test-secrets/*_creds test-secrets/auth-ssl*.json test-secrets/kafka_server_jaas.conf test-secrets/client.properties
 
 run: build
 	./kt
