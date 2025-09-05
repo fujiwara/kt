@@ -1,5 +1,8 @@
 # Changelog
 
+## [v15.1.2](https://github.com/fujiwara/kt/compare/v15.1.1...v15.1.2) - 2025-09-05
+- Use draft release by @fujiwara in https://github.com/fujiwara/kt/pull/37
+
 ## [v15.1.1](https://github.com/fujiwara/kt/compare/v15.1.0...v15.1.1) - 2025-09-05
 - Fix workflows by @fujiwara in https://github.com/fujiwara/kt/pull/34
 - tagpr creates a release with a draft status. by @fujiwara in https://github.com/fujiwara/kt/pull/36
