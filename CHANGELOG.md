@@ -1,5 +1,7 @@
 # Changelog
 
+## [v15.1.4](https://github.com/fujiwara/kt/compare/v15.1.3...v15.1.4) - 2025-09-05
+
 ## [v15.1.3](https://github.com/fujiwara/kt/compare/v15.1.2...v15.1.3) - 2025-09-05
 
 ## [v15.1.2](https://github.com/fujiwara/kt/compare/v15.1.1...v15.1.2) - 2025-09-05
