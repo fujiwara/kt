@@ -1,5 +1,9 @@
 # Changelog
 
+## [v15.1.1](https://github.com/fujiwara/kt/compare/v15.1.0...v15.1.1) - 2025-09-05
+- Fix workflows by @fujiwara in https://github.com/fujiwara/kt/pull/34
+- tagpr creates a release with a draft status. by @fujiwara in https://github.com/fujiwara/kt/pull/36
+
 ## [v15.1.0](https://github.com/fujiwara/kt/compare/v15.0.2...v15.1.0) - 2025-08-30
 - Add SASL_SSL authentication mode support by @fujiwara in https://github.com/fujiwara/kt/pull/31
 - Add comprehensive SASL authentication support with multiple mechanisms by @fujiwara in https://github.com/fujiwara/kt/pull/33
