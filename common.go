@@ -115,6 +115,7 @@ var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 type baseCmd struct {
 	Pretty          bool     `help:"Control output pretty printing." default:"true" negatable:""`
+	Compact         bool     `help:"Compact output (same as --no-pretty)." short:"c"`
 	Verbose         bool     `help:"More verbose logging to stderr."`
 	Jq              string   `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
 	Raw             bool     `help:"Output raw strings without JSON encoding (like jq -r)."`
@@ -146,6 +147,10 @@ func (b *baseCmd) prepare() error {
 	// Read auth configuration
 	if err = readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth); err != nil {
 		return err
+	}
+
+	if b.Compact {
+		b.Pretty = false
 	}
 
 	return nil
@@ -217,23 +222,26 @@ func print(in <-chan printContext, pretty bool) {
 		if q := ctx.cmd.jqQuery; q != nil {
 			if output, multi, err := applyJqFilter(q, ctx.output); err != nil {
 				warnf("failed to apply jq filter: %v\n", err)
-				return
+				// continue to next
 			} else if multi {
 				for _, item := range output.([]any) {
 					if err := printOutput(item, marshal, ctx.cmd.Raw); err != nil {
 						warnf("failed to print output: %v\n", err)
+						close(ctx.done)
 						return
 					}
 				}
 			} else {
 				if err := printOutput(output, marshal, ctx.cmd.Raw); err != nil {
 					warnf("failed to print output: %v\n", err)
+					close(ctx.done)
 					return
 				}
 			}
 		} else {
 			if err := printOutput(ctx.output, marshal, ctx.cmd.Raw); err != nil {
 				warnf("failed to print output: %v\n", err)
+				close(ctx.done)
 				return
 			}
 		}
@@ -264,8 +272,8 @@ func printOutput(output any, marshal func(any) ([]byte, error), raw bool) error 
 		return fmt.Errorf("failed to marshal output %#v, err=%v", output, err)
 	}
 	stdoutWriter.Write(buf)
-	stdoutWriter.Write([]byte{'\n'})
-	return nil
+	_, err = stdoutWriter.Write([]byte{'\n'})
+	return err
 }
 
 type object interface {

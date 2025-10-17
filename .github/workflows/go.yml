@@ -3,58 +3,55 @@ name: Continuous Integration
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
+      - name: Set up Go 1.x
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6
+        with:
+          go-version: ^1.25
 
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v5
-      with:
-        go-version: ^1.25
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v5
-
-    - name: Unit Test
-      run: make test
+      - name: Unit Test
+        run: make test
 
   integration-test:
     name: Integration Tests
     runs-on: ubuntu-latest
     steps:
+      - name: Set up Go 1.x
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version: ^1.25
 
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v5
-      with:
-        go-version: ^1.25
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v5
+      - name: Generate test certificates and bring up containers
+        run: |
+          make test-secrets
+          make dep-up
 
-    - name: Generate test certificates and bring up containers
-      run: |
-        make test-secrets
-        make dep-up
+      - name: Wait for Kafka to be ready
+        run: |
+          echo "Waiting for Kafka to be ready..."
+          timeout 120 bash -c 'until nc -z localhost 9092; do sleep 2; done'
+          echo "TCP connection established, checking Kafka readiness..."
+          timeout 60 bash -c 'until docker logs kt-kafka-1 2>&1 | grep -q "Kafka Server started"; do sleep 2; done'
+          echo "Kafka is ready!"
 
-    - name: Wait for Kafka to be ready
-      run: |
-        echo "Waiting for Kafka to be ready..."
-        timeout 120 bash -c 'until nc -z localhost 9092; do sleep 2; done'
-        echo "TCP connection established, checking Kafka readiness..."
-        timeout 60 bash -c 'until docker logs kt-kafka-1 2>&1 | grep -q "Kafka Server started"; do sleep 2; done'
-        echo "Kafka is ready!"
+      - name: Integration Test
+        run: |
+          make setup-integration
+          make test-integration
 
-    - name: Integration Test
-      run: |
-        make setup-integration
-        make test-integration
-
-    - name: Tear down containers
-      run: make dep-down
+      - name: Tear down containers
+        run: make dep-down

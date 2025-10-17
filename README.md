@@ -294,6 +294,10 @@ $ kt consume --topic actor-news --jq 'select(.key == "Arni")'
 # Control pretty printing (enabled by default for terminals)
 $ kt consume --topic actor-news --offsets 0=0:1 --no-pretty
 {"partition":0,"offset":0,"key":"","value":"Alice wins Oscar","timestamp":"1970-01-01T00:59:59.999+01:00"}
+
+# Use --compact or -c for compact output (same as --no-pretty)
+$ kt consume --topic actor-news --offsets 0=0:1 --compact
+{"partition":0,"offset":0,"key":"","value":"Alice wins Oscar","timestamp":"1970-01-01T00:59:59.999+01:00"}
 ```
 
 </details>
