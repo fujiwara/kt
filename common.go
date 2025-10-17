@@ -115,6 +115,7 @@ var invalidClientIDCharactersRegExp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 type baseCmd struct {
 	Pretty          bool     `help:"Control output pretty printing." default:"true" negatable:""`
+	Compact         bool     `help:"Compact output (same as --no-pretty)." short:"c"`
 	Verbose         bool     `help:"More verbose logging to stderr."`
 	Jq              string   `help:"Apply jq filter to output (e.g., '.value | fromjson | .field')."`
 	Raw             bool     `help:"Output raw strings without JSON encoding (like jq -r)."`
@@ -146,6 +147,10 @@ func (b *baseCmd) prepare() error {
 	// Read auth configuration
 	if err = readAuthFile(b.Auth, os.Getenv(ENV_AUTH), &b.auth); err != nil {
 		return err
+	}
+
+	if b.Compact {
+		b.Pretty = false
 	}
 
 	return nil
