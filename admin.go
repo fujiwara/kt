@@ -5,12 +5,50 @@ import (
 	"log"
 	"os"
 	"os/user"
+	"strconv"
+	"strings"
 	"time"
 
 	json "github.com/goccy/go-json"
 
 	"github.com/IBM/sarama"
 )
+
+type brokerInfo struct {
+	ID      int32  `json:"id"`
+	Host    string `json:"host"`
+	Port    int32  `json:"port"`
+	Rack    string `json:"rack,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+type clusterInfo struct {
+	ClusterID    string       `json:"cluster_id"`
+	ControllerID int32        `json:"controller_id"`
+	Brokers      []brokerInfo `json:"brokers"`
+}
+
+func (c clusterInfo) ToMap() map[string]any {
+	brokers := make([]any, len(c.Brokers))
+	for i, b := range c.Brokers {
+		brokers[i] = map[string]any{
+			"id":   b.ID,
+			"host": b.Host,
+			"port": b.Port,
+		}
+		if b.Rack != "" {
+			brokers[i].(map[string]any)["rack"] = b.Rack
+		}
+		if b.Version != "" {
+			brokers[i].(map[string]any)["version"] = b.Version
+		}
+	}
+	return map[string]any{
+		"cluster_id":    c.ClusterID,
+		"controller_id": c.ControllerID,
+		"brokers":       brokers,
+	}
+}
 
 type adminCmd struct {
 	baseCmd
@@ -78,7 +116,7 @@ func (cmd *adminCmd) run() error {
 	} else if cmd.DeleteTopic != "" {
 		return cmd.runDeleteTopic()
 	} else {
-		return fmt.Errorf("need to supply at least one sub-command of: createtopic, deletetopic")
+		return cmd.runClusterInfo(cfg)
 	}
 }
 
@@ -121,4 +159,94 @@ func (cmd *adminCmd) saramaConfig() (*sarama.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func parseAddr(addr string) (string, int32) {
+	parts := strings.Split(addr, ":")
+	if len(parts) != 2 {
+		return addr, 0
+	}
+	port, err := strconv.ParseInt(parts[1], 10, 32)
+	if err != nil {
+		return addr, 0
+	}
+	return parts[0], int32(port)
+}
+
+func getBrokerVersion(broker *sarama.Broker, cfg *sarama.Config) string {
+	// Check if broker is already connected
+	connected, err := broker.Connected()
+	if err != nil || !connected {
+		// Try to open connection
+		if err := broker.Open(cfg); err != nil {
+			return ""
+		}
+	}
+
+	req := &sarama.ApiVersionsRequest{}
+	resp, err := broker.ApiVersions(req)
+	if err != nil {
+		return ""
+	}
+
+	var metadataMaxVersion int16 = -1
+	for _, apiKey := range resp.ApiKeys {
+		if apiKey.ApiKey == 3 { // Metadata API key is 3
+			metadataMaxVersion = apiKey.MaxVersion
+			break
+		}
+	}
+
+	// Map known Metadata API max versions to Kafka versions
+	// This is approximate based on Kafka release notes
+	// Reference: https://kafka.apache.org/protocol.html#protocol_api_keys
+	switch {
+	case metadataMaxVersion >= 13: // Kafka 4.0+
+		return "4.0+"
+	case metadataMaxVersion >= 12: // Kafka 3.0+
+		return "3.0+"
+	case metadataMaxVersion >= 9: // Kafka 2.4+
+		return "2.4+"
+	case metadataMaxVersion >= 7: // Kafka 2.1+
+		return "2.1+"
+	case metadataMaxVersion >= 5: // Kafka 1.0+
+		return "1.0+"
+	default:
+		return fmt.Sprintf("unknown (metadata-api-v%d)", metadataMaxVersion)
+	}
+}
+
+func (cmd *adminCmd) runClusterInfo(cfg *sarama.Config) error {
+	out := make(chan printContext)
+	go print(out, cmd.Pretty)
+
+	brokerList, controllerID, err := cmd.admin.DescribeCluster()
+	if err != nil {
+		return fmt.Errorf("failed to describe cluster err=%v", err)
+	}
+
+	brokers := make([]brokerInfo, len(brokerList))
+	for i, broker := range brokerList {
+		host, port := parseAddr(broker.Addr())
+		version := getBrokerVersion(broker, cfg)
+		brokers[i] = brokerInfo{
+			ID:      broker.ID(),
+			Host:    host,
+			Port:    port,
+			Rack:    broker.Rack(),
+			Version: version,
+		}
+	}
+
+	info := clusterInfo{
+		ClusterID:    "", // ClusterID not available from DescribeCluster
+		ControllerID: controllerID,
+		Brokers:      brokers,
+	}
+
+	ctx := printContext{output: info, done: make(chan struct{}), cmd: cmd.baseCmd}
+	out <- ctx
+	<-ctx.done
+
+	return nil
 }

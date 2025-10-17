@@ -13,7 +13,7 @@ Some reasons why you might be interested:
 * Adaptive output buffering: unbuffered for terminals, buffered for pipes and files to improve performance.
 * Binary keys and payloads can be passed and presented in base64 or hex encoding.
 * Support for TLS authentication.
-* Basic cluster admin functions: Create & delete topics.
+* Basic cluster admin functions: View cluster information, create & delete topics.
 
 > [!NOTE]
 > This repository is a fork of the original [kt](https://github.com/fgeller/kt).
@@ -249,6 +249,37 @@ $ kt group --group my-group --topic actor-news --partitions 0,1 --reset 100
 # Show offsets without fetching additional data
 $ kt group --group my-group --offsets
 ```
+</details>
+
+<details><summary>View cluster information</summary>
+
+```sh
+$ kt admin
+{
+  "controller_id": 1,
+  "brokers": [
+    {
+      "id": 1,
+      "host": "localhost",
+      "port": 9092,
+      "version": "3.0+"
+    }
+  ]
+}
+
+# With jq filter to get controller ID
+$ kt admin --jq '.controller_id'
+1
+
+# Get list of broker IDs
+$ kt admin --jq '.brokers[].id'
+1
+
+# Get broker versions
+$ kt admin --jq '.brokers[].version'
+"3.0+"
+```
+
 </details>
 
 <details><summary>Create and delete a topic</summary>
