@@ -45,7 +45,7 @@ func (c *cmd) runWithPort(port int, name string, args ...string) (int, string, s
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=localhost:%d", ENV_BROKERS, port))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=test-secrets/auth.json", ENV_AUTH))
-	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=v3.0.0", ENV_KAFKA_VERSION))
+	// Let kt use default Kafka version (3.9.0 for Kafka 4.x compatibility)
 
 	if len(c.in) > 0 {
 		cmd.Stdin = strings.NewReader(c.in)

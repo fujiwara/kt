@@ -14,6 +14,9 @@ import (
 )
 
 func TestChooseKafkaVersion(t *testing.T) {
+	// Expected default version (3.9.0 for Kafka 4.x compatibility)
+	defaultVersion, _ := sarama.ParseKafkaVersion("3.9.0")
+
 	td := map[string]struct {
 		arg      string
 		env      string
@@ -21,7 +24,7 @@ func TestChooseKafkaVersion(t *testing.T) {
 		expected sarama.KafkaVersion
 	}{
 		"default": {
-			expected: sarama.V3_0_0_0,
+			expected: defaultVersion,
 		},
 		"arg v1": {
 			arg:      "v1.0.0",

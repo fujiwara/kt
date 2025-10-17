@@ -311,7 +311,7 @@ func TestDeserializeLines(t *testing.T) {
 			t.Errorf("did not receive output in time")
 		case actual := <-out:
 			if !(reflect.DeepEqual(d.expected, actual)) {
-				t.Errorf(spew.Sprintf("\nexpected %#v\nactual   %#v", d.expected, actual))
+				t.Error(spew.Sprintf("\nexpected %#v\nactual   %#v", d.expected, actual))
 			}
 		}
 	}

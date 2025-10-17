@@ -32,7 +32,7 @@ openssl pkcs12 -export -in server.crt -inkey server.key -out server.p12 \
   -name localhost -CAfile ca.crt -caname ca -password pass:${KEY_PASS}
 
 # Use Docker container to run keytool commands
-KAFKA_IMAGE="apache/kafka:3.9.1"
+KAFKA_IMAGE="apache/kafka:${KAFKA_IMAGE_TAG:-4.1.0}"
 CURRENT_DIR=$(pwd)
 
 # Fix permissions for Docker container access

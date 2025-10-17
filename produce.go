@@ -49,78 +49,45 @@ func kafkaCompression(codecName string) (sarama.CompressionCodec, error) {
 	return sarama.CompressionNone, fmt.Errorf("unsupported compression codec %#v - supported: gzip, snappy, lz4", codecName)
 }
 
-func (cmd *produceCmd) findLeaders() error {
+func (cmd *produceCmd) createProducer() error {
 	var (
 		usr *user.User
 		err error
-		res *sarama.MetadataResponse
-		req = sarama.MetadataRequest{Topics: []string{cmd.Topic}}
 		cfg = sarama.NewConfig()
 	)
 
 	cfg.Producer.RequiredAcks = sarama.WaitForAll
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Return.Errors = true
+	cfg.Producer.Compression = cmd.compression
 	cfg.Version = cmd.getKafkaVersion()
+
 	if usr, err = user.Current(); err != nil {
 		cmd.infof("Failed to read current user err=%v", err)
 	}
 	cfg.ClientID = "kt-produce-" + sanitizeUsername(usr.Username)
-	cmd.infof("sarama client configuration %#v\n", cfg)
+	cmd.infof("Using Kafka version: %v, ClientID: %s\n", cfg.Version, cfg.ClientID)
+
+	// Set up partitioner
+	switch cmd.Partitioner {
+	case "hashCode":
+		cfg.Producer.Partitioner = sarama.NewHashPartitioner
+	case "hashCodeByValue":
+		cfg.Producer.Partitioner = sarama.NewHashPartitioner // Value-based partitioning handled in message preparation
+	default:
+		cfg.Producer.Partitioner = sarama.NewManualPartitioner
+	}
 
 	if err = setupAuth(cmd.baseCmd.auth, cfg); err != nil {
 		return fmt.Errorf("failed to setup auth err=%v", err)
 	}
 
-loop:
-	for _, addr := range cmd.addDefaultPorts(cmd.Brokers) {
-		broker := sarama.NewBroker(addr)
-		if err = broker.Open(cfg); err != nil {
-			cmd.infof("Failed to open broker connection to %v. err=%s\n", addr, err)
-			continue loop
-		}
-		if connected, err := broker.Connected(); !connected || err != nil {
-			cmd.infof("Failed to open broker connection to %v. err=%s\n", addr, err)
-			continue loop
-		}
-
-		if res, err = broker.GetMetadata(&req); err != nil {
-			cmd.infof("Failed to get metadata from %#v. err=%v\n", addr, err)
-			continue loop
-		}
-
-		brokers := map[int32]*sarama.Broker{}
-		for _, b := range res.Brokers {
-			brokers[b.ID()] = b
-		}
-
-		for _, tm := range res.Topics {
-			if tm.Name == cmd.Topic {
-				if tm.Err != sarama.ErrNoError {
-					cmd.infof("Failed to get metadata from %#v. err=%v\n", addr, tm.Err)
-					continue loop
-				}
-
-				cmd.leaders = map[int32]*sarama.Broker{}
-				for _, pm := range tm.Partitions {
-					b, ok := brokers[pm.Leader]
-					if !ok {
-						return fmt.Errorf("failed to find leader in broker response, giving up")
-					}
-
-					if err = b.Open(cfg); err != nil && err != sarama.ErrAlreadyConnected {
-						return fmt.Errorf("failed to open broker connection err=%s", err)
-					}
-					if connected, err := broker.Connected(); !connected && err != nil {
-						return fmt.Errorf("failed to wait for broker connection to open err=%s", err)
-					}
-
-					cmd.leaders[pm.ID] = b
-				}
-				return nil
-			}
-		}
+	cmd.producer, err = sarama.NewSyncProducer(cmd.addDefaultPorts(cmd.Brokers), cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create producer: %w", err)
 	}
 
-	return fmt.Errorf("failed to find leader for given topic")
+	return nil
 }
 
 type produceCmd struct {
@@ -139,7 +106,7 @@ type produceCmd struct {
 	BufferSize  int           `help:"Buffer size for producer" default:"8192"`
 
 	compression sarama.CompressionCodec
-	leaders     map[int32]*sarama.Broker
+	producer    sarama.SyncProducer
 }
 
 func (cmd *produceCmd) run() error {
@@ -151,7 +118,7 @@ func (cmd *produceCmd) run() error {
 	}
 
 	defer cmd.close()
-	if err := cmd.findLeaders(); err != nil {
+	if err := cmd.createProducer(); err != nil {
 		return err
 	}
 	stdin := make(chan string)
@@ -169,7 +136,7 @@ func (cmd *produceCmd) run() error {
 	go cmd.readStdinLines(cmd.BufferSize, stdin)
 	go cmd.listenForInterrupt(q)
 	go cmd.readInput(q, stdin, lines)
-	go cmd.deserializeLines(lines, messages, int32(len(cmd.leaders)))
+	go cmd.deserializeLines(lines, messages, 1) // Partition count not needed with SyncProducer
 	go cmd.batchRecords(messages, batchedMessages)
 	cmd.produce(batchedMessages, out)
 	return nil
@@ -198,23 +165,9 @@ func (cmd *produceCmd) listenForInterrupt(q chan struct{}) {
 }
 
 func (cmd *produceCmd) close() {
-	for _, b := range cmd.leaders {
-		var (
-			connected bool
-			err       error
-		)
-
-		if connected, err = b.Connected(); err != nil {
-			cmd.infof("Failed to check if broker is connected. err=%s\n", err)
-			continue
-		}
-
-		if !connected {
-			continue
-		}
-
-		if err = b.Close(); err != nil {
-			cmd.infof("Failed to close broker %v connection. err=%s\n", b, err)
+	if cmd.producer != nil {
+		if err := cmd.producer.Close(); err != nil {
+			cmd.infof("Failed to close producer. err=%s\n", err)
 		}
 	}
 }
@@ -337,78 +290,61 @@ func (cmd *produceCmd) makeSaramaMessage(msg message) (*sarama.Message, error) {
 	return sm, nil
 }
 
-func (cmd *produceCmd) produceBatch(leaders map[int32]*sarama.Broker, batch []message, out chan printContext) error {
-	requests := map[*sarama.Broker]*sarama.ProduceRequest{}
-	for _, msg := range batch {
-		broker, ok := leaders[*msg.Partition]
-		if !ok {
-			return fmt.Errorf("non-configured partition %v", *msg.Partition)
-		}
-		req, ok := requests[broker]
-		if !ok {
-			req = &sarama.ProduceRequest{RequiredAcks: sarama.WaitForAll, Timeout: 10000}
-			requests[broker] = req
-		}
+func (cmd *produceCmd) produceBatch(batch []message, out chan printContext) error {
+	// Track offsets by partition
+	partitionOffsets := map[int32]*partitionProduceResult{}
 
+	for _, msg := range batch {
 		sm, err := cmd.makeSaramaMessage(msg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to make sarama message: %w", err)
 		}
-		req.AddMessage(cmd.Topic, *msg.Partition, sm)
+
+		// Create ProducerMessage
+		producerMsg := &sarama.ProducerMessage{
+			Topic: cmd.Topic,
+			Key:   sarama.ByteEncoder(sm.Key),
+			Value: sarama.ByteEncoder(sm.Value),
+		}
+
+		// Set partition if specified
+		if msg.Partition != nil {
+			producerMsg.Partition = *msg.Partition
+		}
+
+		// Send message
+		partition, offset, err := cmd.producer.SendMessage(producerMsg)
+		if err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
+
+		// Track offsets
+		if r, ok := partitionOffsets[partition]; ok {
+			r.count++
+			if offset < r.start {
+				r.start = offset
+			}
+		} else {
+			partitionOffsets[partition] = &partitionProduceResult{start: offset, count: 1}
+		}
 	}
 
-	for broker, req := range requests {
-		resp, err := broker.Produce(req)
-		if err != nil {
-			return fmt.Errorf("failed to send request to broker %#v. err=%s", broker, err)
-		}
-
-		offsets, err := cmd.readPartitionOffsetResults(resp)
-		if err != nil {
-			return fmt.Errorf("failed to read producer response err=%s", err)
-		}
-
-		for p, o := range offsets {
-			result := mapObject(map[string]any{"partition": p, "startOffset": o.start, "count": o.count})
-			ctx := printContext{output: result, done: make(chan struct{}), cmd: cmd.baseCmd}
-			out <- ctx
-			<-ctx.done
-		}
+	// Output results
+	for partition, result := range partitionOffsets {
+		resultMap := mapObject(map[string]any{"partition": partition, "startOffset": result.start, "count": result.count})
+		ctx := printContext{output: resultMap, done: make(chan struct{}), cmd: cmd.baseCmd}
+		out <- ctx
+		<-ctx.done
 	}
 
 	return nil
 }
 
-func (cmd *produceCmd) readPartitionOffsetResults(resp *sarama.ProduceResponse) (map[int32]partitionProduceResult, error) {
-	offsets := map[int32]partitionProduceResult{}
-	for _, blocks := range resp.Blocks {
-		for partition, block := range blocks {
-			if block.Err != sarama.ErrNoError {
-				warnf("Failed to send message. err=%s\n", block.Err.Error())
-				return offsets, block.Err
-			}
-
-			if r, ok := offsets[partition]; ok {
-				offsets[partition] = partitionProduceResult{start: block.Offset, count: r.count + 1}
-			} else {
-				offsets[partition] = partitionProduceResult{start: block.Offset, count: 1}
-			}
-		}
-	}
-	return offsets, nil
-}
-
 func (cmd *produceCmd) produce(in chan []message, out chan printContext) {
-	for {
-		select {
-		case b, ok := <-in:
-			if !ok {
-				return
-			}
-			if err := cmd.produceBatch(cmd.leaders, b, out); err != nil {
-				warnf(err.Error()) // TODO: failf
-				return
-			}
+	for b := range in {
+		if err := cmd.produceBatch(b, out); err != nil {
+			warnf("failed to produceBatch: %v", err)
+			return
 		}
 	}
 }
