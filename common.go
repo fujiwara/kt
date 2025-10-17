@@ -222,23 +222,26 @@ func print(in <-chan printContext, pretty bool) {
 		if q := ctx.cmd.jqQuery; q != nil {
 			if output, multi, err := applyJqFilter(q, ctx.output); err != nil {
 				warnf("failed to apply jq filter: %v\n", err)
-				return
+				// continue to next
 			} else if multi {
 				for _, item := range output.([]any) {
 					if err := printOutput(item, marshal, ctx.cmd.Raw); err != nil {
 						warnf("failed to print output: %v\n", err)
+						close(ctx.done)
 						return
 					}
 				}
 			} else {
 				if err := printOutput(output, marshal, ctx.cmd.Raw); err != nil {
 					warnf("failed to print output: %v\n", err)
+					close(ctx.done)
 					return
 				}
 			}
 		} else {
 			if err := printOutput(ctx.output, marshal, ctx.cmd.Raw); err != nil {
 				warnf("failed to print output: %v\n", err)
+				close(ctx.done)
 				return
 			}
 		}
@@ -269,8 +272,8 @@ func printOutput(output any, marshal func(any) ([]byte, error), raw bool) error 
 		return fmt.Errorf("failed to marshal output %#v, err=%v", output, err)
 	}
 	stdoutWriter.Write(buf)
-	stdoutWriter.Write([]byte{'\n'})
-	return nil
+	_, err = stdoutWriter.Write([]byte{'\n'})
+	return err
 }
 
 type object interface {
