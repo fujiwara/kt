@@ -199,7 +199,8 @@ func logClose(name string, c io.Closer) {
 
 func chooseKafkaVersion(v string, ex ...string) (sarama.KafkaVersion, error) {
 	if v == "" {
-		return sarama.V3_0_0_0, nil // Default to V3.0.0.0 if no version specified
+		// Default to V3.9.0 for Kafka 4.x compatibility
+		return sarama.ParseKafkaVersion("3.9.0")
 	}
 	return sarama.ParseKafkaVersion(strings.TrimPrefix(v, "v"))
 }
