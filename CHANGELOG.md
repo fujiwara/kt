@@ -1,5 +1,10 @@
 # Changelog
 
+## [v16.0.0](https://github.com/fujiwara/kt/compare/v15.1.4...v16.0.0) - 2025-10-17
+- Add --compact flag and improve error handling by @fujiwara in https://github.com/fujiwara/kt/pull/41
+- Support Kafka 4.x compatibility by @fujiwara in https://github.com/fujiwara/kt/pull/43
+- Add cluster info display to admin command by @fujiwara in https://github.com/fujiwara/kt/pull/44
+
 ## [v15.1.4](https://github.com/fujiwara/kt/compare/v15.1.3...v15.1.4) - 2025-09-05
 
 ## [v15.1.3](https://github.com/fujiwara/kt/compare/v15.1.2...v15.1.3) - 2025-09-05
