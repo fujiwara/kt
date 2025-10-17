@@ -11,16 +11,16 @@ dist:
 	goreleaser build --snapshot --clean
 
 dep-up: test-secrets
-	docker compose -f ./test-dependencies.yml up -d
+	docker compose -f ./compose.yml up -d
 
 dep-down:
-	docker compose -f ./test-dependencies.yml down
+	docker compose -f ./compose.yml down
 
 test: clean
 	go test -v -vet=all -failfast -race
 
 setup-integration:
-	docker compose -f test-dependencies.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh \
+	docker compose -f compose.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh \
 		--bootstrap-server localhost:9093 \
 		--alter \
 		--add-config 'SCRAM-SHA-256=[password=testpass]' \
