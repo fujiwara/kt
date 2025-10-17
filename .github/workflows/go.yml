@@ -52,6 +52,12 @@ jobs:
           echo "TCP connection established, checking Kafka readiness..."
           timeout 60 bash -c 'until docker logs kt-kafka-1 2>&1 | grep -q "Kafka Server started"; do sleep 2; done'
           echo "Kafka is ready!"
+          docker compose logs kafka | grep "Kafka version:"
+
+      - name: kt admin
+        run: |
+          make
+          ./kt admin
 
       - name: Integration Test
         run: |
